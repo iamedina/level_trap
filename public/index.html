@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>LEVEL TRAP - Plataformas 2D Hardcore</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Space+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- BARRA SUPERIOR CONSTANTE (UI HUD) -->
+    <header class="top-nav" id="main-header">
+      <div class="brand-zone">
+        <span class="game-logo">LEVEL TRAP</span>
+        <span class="hud-pill hud-level" id="hud-level">Nivel 1/50</span>
+        <span class="hud-pill hud-zone" id="hud-zone">Zona: Tierra y Arena</span>
+      </div>
+
+      <div class="hud-center-stats" id="hud-center-stats">
+        <span class="hud-stat" id="hud-deaths">Muertes: 0</span>
+        <span class="hud-stat timer-badge" id="hud-timer">00:00.000</span>
+      </div>
+
+      <div class="hud-controls-bar">
+        <button id="btn-toggle-touch" class="btn btn-sm btn-hud" title="Alternar Controles Táctiles">Táctil: OFF</button>
+        <button id="btn-toggle-audio" class="btn btn-sm btn-hud" title="Mute/Unmute Audio Chiptune">🔊 Mute: OFF</button>
+        <button id="btn-open-levels" class="btn btn-sm btn-hud hidden" id="btn-levels">🗺️ Niveles</button>
+        <button id="btn-open-achievements" class="btn btn-sm btn-hud hidden" id="btn-achievements">🏆 Logros</button>
+        <button id="btn-open-leaderboard" class="btn btn-sm btn-hud hidden" id="btn-lb">📊 Leaderboard</button>
+        <button id="btn-open-versus" class="btn btn-sm btn-hud btn-versus hidden">⚔️ Versus 1v1</button>
+        <button id="btn-open-daily" class="btn btn-sm btn-hud hidden">🎲 Reto Diario</button>
+        
+        <div class="user-quick-bar" id="user-quick-bar">
+          <span id="quick-username" class="muted-text">Invitado</span>
+          <button id="btn-quick-logout" class="btn btn-sm btn-danger hidden">Salir</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ÁREA PRINCIPAL -->
+    <main class="main-content" id="main-content">
+      
+      <!-- SECCIÓN DE AUTENTICACIÓN (Visible sólo si no hay token JWT válido) -->
+      <div class="card auth-card" id="auth-section">
+        <div class="auth-tabs">
+          <button id="tab-login" class="tab-btn active">Iniciar Sesión</button>
+          <button id="tab-register" class="tab-btn">Crear Cuenta</button>
+        </div>
+
+        <div id="auth-alert" class="alert hidden"></div>
+
+        <!-- Formulario de Login -->
+        <form id="form-login" class="auth-form">
+          <div class="form-group">
+            <label for="login-identifier">Usuario o Correo</label>
+            <input type="text" id="login-identifier" class="input-field" placeholder="ej. trap_master" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="login-password">Contraseña</label>
+            <input type="password" id="login-password" class="input-field" placeholder="••••••••" required autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn btn-primary" id="btn-submit-login">Entrar a Level Trap</button>
+        </form>
+
+        <!-- Formulario de Registro -->
+        <form id="form-register" class="auth-form hidden">
+          <div class="form-group">
+            <label for="reg-username">Nombre de Usuario (3-30 caracteres)</label>
+            <input type="text" id="reg-username" class="input-field" placeholder="ej. trap_master" minlength="3" maxlength="30" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="reg-email">Correo Electrónico</label>
+            <input type="email" id="reg-email" class="input-field" placeholder="tu_correo@ejemplo.com" required autocomplete="email">
+          </div>
+          <div class="form-group">
+            <label for="reg-password">Contraseña (Mínimo 6 caracteres)</label>
+            <input type="password" id="reg-password" class="input-field" placeholder="••••••••" minlength="6" required autocomplete="new-password">
+          </div>
+          <button type="submit" class="btn btn-accent" id="btn-submit-register">Crear Cuenta en BD Real</button>
+        </form>
+      </div>
+
+      <!-- CONTENEDOR DEL JUEGO (CANVAS 1280x720) -->
+      <div class="game-wrapper hidden" id="game-wrapper">
+        <div class="canvas-aspect-container" id="canvas-container">
+          <!-- Canvas Panorámico Estricto: 1280 x 720 px -->
+          <canvas id="gameCanvas" width="1280" height="720"></canvas>
+
+          <!-- Capa de Controles Táctiles Virtuales (Oculta por defecto, toggle con botón) -->
+          <div class="touch-controls-overlay hidden" id="touch-controls">
+            <div class="touch-dpad">
+              <button class="touch-btn touch-btn-dir" id="touch-left">◀</button>
+              <button class="touch-btn touch-btn-dir" id="touch-right">▶</button>
+            </div>
+            <div class="touch-action">
+              <button class="touch-btn touch-btn-jump" id="touch-jump">SALTO</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="game-instruction-banner">
+          <span>Teclado: <strong>WASD</strong> o <strong>Flechas</strong> para moverte | <strong>Espacio</strong> para saltar | <strong>R</strong> reiniciar nivel</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- MODAL POPUP PARA LOGROS, LEADERBOARD Y NIVELES -->
+    <div class="modal-overlay hidden" id="modal-overlay">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="modal-title">Título del Modal</h3>
+          <button class="btn-close-modal" id="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="modal-body">
+          <!-- Contenido dinámico inyectado por UIManager -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Barra de Estado Inferior -->
+    <footer class="bottom-bar">
+      <span>LEVEL TRAP - PLATAFORMAS 2D HARDCORE (PERSISTENCIA REAL SQLITE/POSTGRESQL)</span>
+      <span id="socket-status">WebSocket: Conectado</span>
+    </footer>
+  </div>
+
+  <!-- Scripts del Ecosistema del Juego -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/engine/zones.js"></script>
+  <script src="js/engine/particles.js"></script>
+  <script src="js/engine/player.js"></script>
+  <script src="js/engine/traps.js"></script>
+  <script src="js/engine/bosses.js"></script>
+  <script src="js/engine/ghost.js"></script>
+  <script src="js/engine/versus.js"></script>
+  <script src="js/engine/game.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>
