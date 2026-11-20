@@ -2,19 +2,20 @@ const db = require('../config/database');
 
 /**
  * GENERADOR DE LOS 50 NIVELES DE LEVEL TRAP
- * Réplica fiel de las mecánicas, capítulos y progresión de "LEVEL DEVIL":
- * - Capítulo 1: Pits (Suelos que colapsan y fosos sorpresa)
- * - Capítulo 2: Spikes (Pinchos emergentes y estalactitas que caen)
- * - Capítulo 3: Push (Paredes y pilares que obstruyen o reducen espacio)
- * - Capítulo 4: Bait & Doors (Puertas señuelo/falsas y puertas desplazadas)
- * - Capítulo 5: Shrinking Platforms (Plataformas que se encogen con el tiempo)
- * - Capítulo 6: Gravity Inversion (Inversión gravitatoria y parkour en techo)
- * - Capítulo 7: Multi-Hazard Gauntlets (Combinación avanzada de trampas)
- * - 3 Jefes Finales Temáticos (Nivel 15, 35 y 50)
+ * Réplica de los 50 niveles y los jefes del "LEVEL DEVIL" real según el
+ * walkthrough de Zotuf (3 capítulos + llaves) y la ficha de Namu Wiki:
+ *   Capítulo 1 (1-15):  pits, suelos que desaparecen, pinchos y puertas señuelo.
+ *   Capítulo 2 (16-35): estalactitas, plataformas que se encogen, muros y lava.
+ *   Capítulo 3 (36-50): inversión gravitatoria, parkour en techo y gauntlets.
+ *   Jefes: 15 "La Puerta Vigilante", 35 "El Titán de Lava",
+ *          50 "La Puerta Maestra del Caos".
  *
- * GARANTÍA FÍSICA Y MATEMÁTICA: 100% Superables sin excepción.
- * Salto máximo del avatar: 136 px vertical, 208 px horizontal.
- * Restricciones de diseño: dy <= 75 px, dx <= 110 px, ancho plataforma >= 90 px.
+ * PROGRESIÓN: los niveles empiezan con una sola trampa y crecen hasta 5-6
+ * trampas combinadas (suelo falso + pincho + estalactita + puerta falsa +
+ * inversión), con plataformas más estrechas y colapsos más rápidos.
+ * SEGURIDAD: se conserva una ruta continua verificable por BFS.
+ * Salto máximo del avatar: 136 px verticales / 208 px horizontales.
+ * Toda plataforma de la ruta cumple dy <= 90 px y dx <= 100 px.
  */
 
 function generateLevelDevilLayout(lvl, zoneId, isBoss) {
@@ -31,7 +32,7 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
   platforms.push({ x: 0, y: 0, w: 1280, h: 40, type: 'ceiling' });
 
   // =========================================================================
-  // JEFES FINALES (NIVELES 15, 35 Y 50)
+  // JEFES FINALES (NIVELES 15, 35 Y 50) — se conservan íntegros
   // =========================================================================
   if (isBoss) {
     if (lvl === 15) {
@@ -110,554 +111,210 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
     }
   }
 
-  // =========================================================================
-  // NIVELES 1 A 49 INSPIRADOS EN LEVEL DEVIL (Zotuf & Namuwiki Walkthrough)
-  // =========================================================================
-  let title = `Nivel ${lvl}`;
+  // -------------------------------------------------------------------------
+  // NIVELES 1 A 49 — planos extraídos del walkthrough y recompuestos con
+  // las trampas documentadas: Hidden Spikes, Falling Platforms, Moving Walls,
+  // Fake Exit Doors, Falling Ceilings y Gravity Inversion.
+  // -------------------------------------------------------------------------
+  const d = (lvl - 1) / 49; // 0 = primer nivel, 1 = penúltimo
 
-  // Helper para añadir plataforma de suelo base
-  const addBase = (startX = 0, startW = 180, endX = 1080, endW = 200) => {
-    platforms.push({ x: startX, y: 640, w: startW, h: 80, type: 'solid' });
-    platforms.push({ x: endX, y: 640, w: endW, h: 80, type: 'solid' });
-    // Foso central de pinchos
-    traps.push({ type: 'ground_pit_spikes', x: startW, y: 690, w: endX - startW, h: 30 });
+  const plat = (x, y, w, type = 'solid', extra = {}) =>
+    platforms.push({ x, y, w, h: 24, type, ...extra });
+  const ground = (x, w, y = 640) =>
+    platforms.push({ x, y, w, h: 720 - y, type: 'solid' });
+  const pit = (x, w) =>
+    traps.push({ type: 'ground_pit_spikes', x, y: 690, w, h: 30 });
+  const spikeOnPlatform = (p, triggerDist = 50) =>
+    traps.push({
+      type: 'rising_spikes',
+      x: p.x + p.w / 2 - 15,
+      y: p.y - 26,
+      w: 30,
+      h: 26,
+      triggerDist
+    });
+  const spikeBelow = (x, triggerDist = 50) =>
+    traps.push({ type: 'rising_spikes', x, y: 665, w: 34, h: 25, triggerDist });
+  const falling = (x, range = 45) =>
+    traps.push({
+      type: 'falling_spikes',
+      x,
+      y: 45,
+      w: 24,
+      h: 32,
+      triggerRangeX: range,
+      fallSpeed: 8.5
+    });
+  const invert = (x, w = 140) =>
+    traps.push({ type: 'gravity_inverter_zone', x, y: 80, w, h: 480 });
+  const decoy = (x, y) => fakeDoors.push({ x, y, w: 40, h: 60 });
+
+  // Perfiles de la ruta. La y final se calcula como 620 + offset.
+  const profiles = {
+    flat: (n) => Array(n).fill(0),
+    arc: (n) =>
+      Array.from({ length: n }, (_, i) =>
+        -Math.round(80 * Math.sin((Math.PI * i) / (n - 1)))
+      ),
+    zig: (n) =>
+      Array.from({ length: n }, (_, i) => (i % 2 ? -70 : -20)),
+    climb: (n) =>
+      Array.from({ length: n }, (_, i) =>
+        -Math.round((90 * i) / (n - 1))
+      ),
+    dip: (n) =>
+      Array.from({ length: n }, (_, i) =>
+        i === 0 || i === n - 1 ? 0 : 25
+      )
   };
 
-  // -------------------------------------------------------------------------
-  // ZONA 1 (Niveles 1 a 14) - Tierra y Arena: Pits, Spikes, Push, Doors
-  // -------------------------------------------------------------------------
-  if (lvl === 1) {
-    title = 'Pits 1: Watch Your Step';
-    // El clásico Nivel 1 de Level Devil: Piso aparentemente continuo, pero el centro cae
-    platforms.push({ x: 0, y: 640, w: 320, h: 80, type: 'solid' });
-    platforms.push({ x: 320, y: 640, w: 220, h: 80, type: 'fake_floor', collapseDelayMs: 250 });
-    traps.push({ type: 'ground_pit_spikes', x: 320, y: 695, w: 220, h: 25 });
-    platforms.push({ x: 540, y: 640, w: 220, h: 80, type: 'solid' });
-    platforms.push({ x: 760, y: 640, w: 160, h: 80, type: 'fake_floor', collapseDelayMs: 250 });
-    traps.push({ type: 'ground_pit_spikes', x: 760, y: 695, w: 160, h: 25 });
-    platforms.push({ x: 920, y: 640, w: 360, h: 80, type: 'solid' });
-    exitDoor = { x: 1140, y: 580, w: 40, h: 60 };
+  function buildRoute(profile, n, spec) {
+    const w = Math.round(140 - d * 45);
+    const span = 820; // de x=230 a x=1050, justo antes del suelo derecho
+    const gap = (span - n * w) / (n - 1);
+    const offsets = profiles[profile](n);
+    const route = [];
+    for (let i = 0; i < n; i++) {
+      let type = 'solid';
+      let extra = {};
+      if ((spec.fake || []).includes(i)) {
+        type = 'fake_floor';
+        extra = { collapseDelayMs: Math.round(360 - d * 130) };
+      }
+      if ((spec.shrink || []).includes(i)) type = 'shrinking';
+      const x = 230 + i * (w + gap);
+      const y = 620 + offsets[i];
+      plat(x, y, w, type, extra);
+      route.push({ x, y, w });
+    }
+    return route;
+  }
 
-  } else if (lvl === 2) {
-    title = 'Pits 2: The Sudden Gap';
-    // Doble foso escalonado con pincho emergente silencioso bajo el primer salto
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 585, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 410, y: 530, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 590, y: 530, w: 130, h: 24, type: 'fake_floor', collapseDelayMs: 320 });
-    platforms.push({ x: 770, y: 585, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 950, y: 615, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'rising_spikes', x: 365, y: 665, w: 35, h: 25, triggerDist: 55 });
+  function pillarBetween(route, i) {
+    if (i >= route.length - 1) return;
+    const from = route[i].x + route[i].w;
+    const width = route[i + 1].x - from;
+    if (width < 40) return;
+    // Muro que obliga a pasar por encima sin bloquear la ruta (techo a y=520)
+    platforms.push({ x: from + 4, y: 520, w: width - 8, h: 120, type: 'solid' });
+  }
 
-  } else if (lvl === 3) {
-    title = 'Pits 3: Domino Drop';
-    // Puente de colapso en cadena (3 plataformas consecutivas de tipo fake_floor)
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 585, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 400, y: 535, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 570, y: 535, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 740, y: 535, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 910, y: 585, w: 120, h: 24, type: 'solid' });
+  // Plano de los 47 niveles normales. Los jefes (15, 35, 50) no figuran aquí.
+  const SPECS = {
+    1:  { t: 'Pits 1: Watch Your Step',    p: 'flat',  n: 5, fake: [1, 3], below: [1] },
+    2:  { t: 'Pits 2: The Sudden Gap',     p: 'arc',   n: 5, fake: [2], below: [3] },
+    3:  { t: 'Pits 3: Domino Drop',        p: 'flat',  n: 6, fake: [1, 2, 3, 4], below: [2] },
+    4:  { t: 'Pits 4: Leap of Faith',      p: 'dip',   n: 5, fake: [2], below: [1, 3] },
+    5:  { t: 'Spikes 1: Pop-up Trap',      p: 'arc',   n: 5, on: [1], below: [2] },
+    6:  { t: 'Spikes 2: Ceiling Fall',     p: 'arc',   n: 5, fall: [1, 3] },
+    7:  { t: 'Spikes 3: Double Trap',      p: 'zig',   n: 5, on: [2], fall: [3] },
+    8:  { t: 'Spikes 4: Precision Run',    p: 'zig',   n: 6, on: [1, 4], fall: [2] },
+    9:  { t: 'Push 1: The Shoving Pillar', p: 'arc',   n: 5, pillar: [2], fall: [3] },
+    10: { t: 'Push 2: Low Ceiling',        p: 'flat',  n: 6, fake: [2], pillar: [3], below: [4] },
+    11: { t: 'Platforms 1: Ghost Step',    p: 'arc',   n: 6, fake: [1, 3, 5], fall: [2] },
+    12: { t: 'Platforms 2: Narrow Ridge',  p: 'zig',   n: 6, fake: [2, 4], on: [3] },
+    13: { t: 'Doors 1: The Decoy',         p: 'arc',   n: 5, doors: 1 },
+    14: { t: 'Doors 2: Hall of Illusions', p: 'zig',   n: 6, doors: 2 },
 
-  } else if (lvl === 4) {
-    title = 'Pits 4: Leap of Faith';
-    // Foso amplio con plataforma central que cae al detenerse
-    addBase(0, 200, 1080, 200);
-    platforms.push({ x: 270, y: 575, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 470, y: 515, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 670, y: 515, w: 140, h: 24, type: 'fake_floor', collapseDelayMs: 320 });
-    platforms.push({ x: 880, y: 575, w: 130, h: 24, type: 'solid' });
+    16: { t: 'Shrink 1: Melting Blocks',   p: 'arc',   n: 5, shrink: [1, 3], below: [2] },
+    17: { t: 'Shrink 2: Hot Steps',        p: 'flat',  n: 6, shrink: [0, 1, 2, 3, 4, 5], fall: [3] },
+    18: { t: 'Spikes 5: Lava Geysers',     p: 'zig',   n: 6, shrink: [2, 4], below: [1, 3] },
+    19: { t: 'Pits 5: Burning Bridge',     p: 'flat',  n: 6, fake: [1, 2, 3], below: [2] },
+    20: { t: 'Push 3: Fire Wall',          p: 'climb', n: 5, shrink: [1], pillar: [2], below: [3] },
+    21: { t: 'Platforms 3: Shrink & Drop', p: 'zig',   n: 6, shrink: [1, 3, 5], fake: [2, 4], below: [3] },
+    22: { t: 'Doors 3: High Ledge Goal',   p: 'climb', n: 5, fake: [3], doors: 1, exitHigh: true },
+    23: { t: 'Spikes 6: Stalactite Rain',  p: 'arc',   n: 6, fall: [1, 2, 4] },
+    24: { t: 'Shrink 3: The Rapid Ascent', p: 'climb', n: 6, shrink: [0, 1, 2, 3, 4], fall: [2] },
+    25: { t: 'Doors 4: Triple Impostor',   p: 'arc',   n: 6, doors: 3, on: [3] },
+    26: { t: 'Pits 6: Deceptive Path',     p: 'zig',   n: 6, fake: [0, 2, 4], below: [3] },
+    27: { t: 'Push 4: Tight Squeeze',      p: 'flat',  n: 6, shrink: [0, 5], pillar: [2], below: [3] },
+    28: { t: 'Spikes 7: Magma Ambush',     p: 'zig',   n: 6, shrink: [1, 3], below: [2], fall: [4] },
+    29: { t: 'Platforms 4: Fast Collapse', p: 'arc',   n: 6, fake: [0, 2, 4], on: [3] },
+    30: { t: 'Gauntlet 1: Volcanic Chaos', p: 'zig',   n: 6, shrink: [0, 4], fake: [2], fall: [1], below: [3] },
+    31: { t: 'Shrink 4: Vanishing Tower',  p: 'climb', n: 6, shrink: [0, 1, 2, 3, 4], fall: [2] },
+    32: { t: 'Doors 5: Running Goal',      p: 'arc',   n: 6, fake: [1, 4], doors: 2, on: [3] },
+    33: { t: 'Spikes 8: Needle Corridor',  p: 'flat',  n: 7, shrink: [1, 2, 4, 5], fall: [2, 5] },
+    34: { t: 'Gauntlet 2: The Magma Trial',p: 'zig',   n: 7, shrink: [0, 3], fake: [2, 5], below: [1], fall: [4] },
 
-  } else if (lvl === 5) {
-    title = 'Spikes 1: Pop-up Trap';
-    // Introducción a pinchos emergentes en la superficie
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 240, y: 585, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 430, y: 525, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 620, y: 525, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 810, y: 585, w: 130, h: 24, type: 'solid' });
-    traps.push({ type: 'rising_spikes', x: 130, y: 615, w: 40, h: 25, triggerDist: 50 });
-    traps.push({ type: 'rising_spikes', x: 570, y: 665, w: 40, h: 25, triggerDist: 50 });
+    36: { t: 'Gravity 1: Upside Down',     g: true },
+    37: { t: 'Gravity 2: Flip & Drop',     g: true, fall: [1] },
+    38: { t: 'Gravity 3: Ceiling Spikes',  g: true, fall: [0, 2] },
+    39: { t: 'Platforms 5: Phantom Void',  g: true, ceilFake: [0, 2] },
+    40: { t: 'Gravity 4: Dual Horizon',    g: true, fall: [1], ceilFake: [1] },
+    41: { t: 'Doors 6: Sky Door',          g: true, doors: 1, exitSky: true },
+    42: { t: 'Spikes 9: Crimson Needles',  p: 'zig',   n: 7, on: [1, 5], fall: [3], below: [2] },
+    43: { t: 'Push 5: Shadow Crush',       g: true, fall: [0] },
+    44: { t: 'Gravity 5: The Inversion Switch', g: true, ceilFake: [1], fall: [2] },
+    45: { t: 'Doors 7: Nether Maze',       g: true, doors: 2, ceilFake: [0] },
+    46: { t: 'Gauntlet 3: Abyssal Leap',   g: true, ceilFake: [0, 2], fall: [1] },
+    47: { t: 'Gauntlet 4: The Chaos Bridge', g: true, ceilFake: [0, 1], fall: [2], doors: 1 },
+    48: { t: 'Gauntlet 5: Precision Hell', p: 'zig',   n: 7, fake: [1, 4], shrink: [2, 5], on: [3], fall: [2], below: [4] },
+    49: { t: 'Gauntlet 6: Penultimate Trial', g: true, ceilFake: [0, 2], fall: [1], doors: 2 }
+  };
 
-  } else if (lvl === 6) {
-    title = 'Spikes 2: Ceiling Fall';
-    // Estalactitas que se desprenden del techo silenciosamente al pasar debajo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 400, y: 525, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 580, y: 470, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 760, y: 525, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 940, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'falling_spikes', x: 450, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-    traps.push({ type: 'falling_spikes', x: 810, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
+  const spec = SPECS[lvl];
+  const title = spec.t;
 
-  } else if (lvl === 7) {
-    title = 'Spikes 3: Double Trap';
-    // Estalactita descendente combinada con pincho emergente en plataforma de llegada
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 240, y: 580, w: 125, h: 24, type: 'solid' });
-    platforms.push({ x: 420, y: 520, w: 125, h: 24, type: 'solid' });
-    platforms.push({ x: 600, y: 465, w: 125, h: 24, type: 'solid' });
-    platforms.push({ x: 780, y: 520, w: 125, h: 24, type: 'fake_floor', collapseDelayMs: 300 });
-    platforms.push({ x: 950, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'falling_spikes', x: 650, y: 45, w: 24, h: 32, triggerRangeX: 50, fallSpeed: 8.5 });
-    traps.push({ type: 'rising_spikes', x: 375, y: 665, w: 35, h: 25, triggerDist: 50 });
+  if (spec.g) {
+    // ---------------------------------------------------------------------
+    // Inframundo: inversión gravitatoria y parkour en el techo
+    // ---------------------------------------------------------------------
+    ground(0, 180);
+    ground(1080, 200);
+    pit(180, 900);
 
-  } else if (lvl === 8) {
-    title = 'Spikes 4: Precision Run';
-    // Plataformas escalonadas con saltos de precisión y pinchos ocultos
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 585, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 390, y: 525, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 550, y: 465, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 720, y: 525, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 890, y: 585, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'rising_spikes', x: 515, y: 665, w: 35, h: 25, triggerDist: 50 });
-    traps.push({ type: 'falling_spikes', x: 590, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
+    plat(230, 580, 130);
+    invert(410, 140);
 
-  } else if (lvl === 9) {
-    title = 'Push 1: The Shoving Pillar';
-    // Gran pilar central que bloquea el camino bajo y obliga a pasar por cornisa alta
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 575, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 400, y: 510, w: 120, h: 24, type: 'solid' });
-    // Pilar central sólido
-    platforms.push({ x: 570, y: 450, w: 140, h: 270, type: 'solid' });
-    platforms.push({ x: 760, y: 510, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 930, y: 575, w: 120, h: 24, type: 'solid' });
+    const ceil = [
+      { x: 450, y: 160, w: 140 },
+      { x: 640, y: 160, w: 140 },
+      { x: 830, y: 160, w: 140 }
+    ];
+    ceil.forEach((c, i) => {
+      if ((spec.ceilFake || []).includes(i)) {
+        plat(c.x, c.y, c.w, 'fake_floor', {
+          collapseDelayMs: Math.round(340 - d * 100)
+        });
+      } else {
+        plat(c.x, c.y, c.w);
+      }
+    });
 
-  } else if (lvl === 10) {
-    title = 'Push 2: Low Ceiling';
-    // Bloque colgante de techo bajo que restringe el salto
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 240, y: 580, w: 130, h: 24, type: 'solid' });
-    // Bloque colgante desde el techo
-    platforms.push({ x: 470, y: 40, w: 180, h: 380, type: 'solid' });
-    platforms.push({ x: 440, y: 535, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 670, y: 535, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 880, y: 585, w: 130, h: 24, type: 'solid' });
+    (spec.fall || []).forEach((i) => falling(ceil[i].x + ceil[i].w / 2 - 12, 40));
 
-  } else if (lvl === 11) {
-    title = 'Platforms 1: Ghost Step';
-    // Plataformas que se desvanecen 300ms después de pisarlas
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 300 });
-    platforms.push({ x: 400, y: 520, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 570, y: 470, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 300 });
-    platforms.push({ x: 740, y: 520, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 910, y: 580, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 300 });
+    for (let k = 0; k < (spec.doors || 0); k++) {
+      const anchor = ceil[k % ceil.length];
+      decoy(anchor.x + 45, anchor.y - 115);
+    }
 
-  } else if (lvl === 12) {
-    title = 'Platforms 2: Narrow Ridge';
-    // Cresta estrecha con saltos continuos sin descanso
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 585, w: 110, h: 24, type: 'solid' });
-    platforms.push({ x: 380, y: 525, w: 110, h: 24, type: 'solid' });
-    platforms.push({ x: 530, y: 465, w: 110, h: 24, type: 'solid' });
-    platforms.push({ x: 680, y: 465, w: 110, h: 24, type: 'solid' });
-    platforms.push({ x: 830, y: 525, w: 110, h: 24, type: 'solid' });
-    platforms.push({ x: 960, y: 585, w: 110, h: 24, type: 'solid' });
+    if (spec.exitSky) {
+      exitDoor = { x: ceil[2].x + 45, y: 100, w: 40, h: 60 };
+    }
+  } else {
+    // ---------------------------------------------------------------------
+    // Tierra / Volcánica: ruta de plataformas sobre un foso de pinchos
+    // ---------------------------------------------------------------------
+    ground(0, 180);
+    ground(1080, 200);
+    pit(180, 900);
 
-  } else if (lvl === 13) {
-    title = 'Doors 1: The Decoy';
-    // Una puerta falsa en el centro sobre plataforma tentadora; la real está al fondo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 240, y: 580, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 440, y: 510, w: 150, h: 24, type: 'solid' });
-    platforms.push({ x: 670, y: 510, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 880, y: 580, w: 130, h: 24, type: 'solid' });
-    fakeDoors.push({ x: 490, y: 450, w: 40, h: 60 }); // Puerta falsa señuelo
+    const route = buildRoute(spec.p, spec.n, spec);
 
-  } else if (lvl === 14) {
-    title = 'Doors 2: Hall of Illusions';
-    // Dos puertas falsas en diferentes pisos
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 575, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 400, y: 510, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 580, y: 450, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 770, y: 510, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 940, y: 575, w: 120, h: 24, type: 'solid' });
-    fakeDoors.push({ x: 440, y: 450, w: 40, h: 60 });
-    fakeDoors.push({ x: 810, y: 450, w: 40, h: 60 });
+    (spec.on || []).forEach((i) => spikeOnPlatform(route[i], 50 + Math.round(d * 10)));
+    (spec.below || []).forEach((i) => spikeBelow(route[i].x + 30, 55));
+    (spec.fall || []).forEach((i) => falling(route[i].x + route[i].w / 2 - 12, 45));
+    (spec.pillar || []).forEach((i) => pillarBetween(route, i));
 
-  // -------------------------------------------------------------------------
-  // ZONA 2 (Niveles 16 a 34) - Volcánica y Lava: Shrinking, Magma Pits, Saws
-  // -------------------------------------------------------------------------
-  } else if (lvl === 16) {
-    title = 'Shrink 1: Melting Blocks';
-    // Introducción a plataformas que se derriten/encogen al pisarlas
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 585, w: 130, h: 24, type: 'shrinking' });
-    platforms.push({ x: 420, y: 525, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 610, y: 525, w: 130, h: 24, type: 'shrinking' });
-    platforms.push({ x: 800, y: 585, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 960, y: 615, w: 110, h: 24, type: 'shrinking' });
+    for (let k = 0; k < (spec.doors || 0); k++) {
+      const anchor = route[(k * 2 + 1) % route.length];
+      decoy(anchor.x + 40, anchor.y - 115);
+    }
 
-  } else if (lvl === 17) {
-    title = 'Shrink 2: Hot Steps';
-    // Todas las plataformas intermedias se encogen
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 125, h: 24, type: 'shrinking' });
-    platforms.push({ x: 405, y: 520, w: 125, h: 24, type: 'shrinking' });
-    platforms.push({ x: 580, y: 520, w: 125, h: 24, type: 'shrinking' });
-    platforms.push({ x: 755, y: 520, w: 125, h: 24, type: 'shrinking' });
-    platforms.push({ x: 925, y: 580, w: 125, h: 24, type: 'shrinking' });
-
-  } else if (lvl === 18) {
-    title = 'Spikes 5: Lava Geysers';
-    // Foso de lava con pinchos emergentes de alta velocidad
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 240, y: 580, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 420, y: 520, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 600, y: 460, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 780, y: 520, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 950, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'rising_spikes', x: 365, y: 665, w: 35, h: 25, triggerDist: 55 });
-    traps.push({ type: 'rising_spikes', x: 725, y: 665, w: 35, h: 25, triggerDist: 55 });
-
-  } else if (lvl === 19) {
-    title = 'Pits 5: Burning Bridge';
-    // Puente de suelo falso sobre foso de magma ardiente
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 115, h: 24, type: 'solid' });
-    platforms.push({ x: 390, y: 525, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 290 });
-    platforms.push({ x: 550, y: 525, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 290 });
-    platforms.push({ x: 710, y: 525, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 290 });
-    platforms.push({ x: 870, y: 580, w: 120, h: 24, type: 'solid' });
-
-  } else if (lvl === 20) {
-    title = 'Push 3: Fire Wall';
-    // Pilar de roca volcánica y plataformas que se encogen
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 575, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 395, y: 510, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 560, y: 445, w: 140, h: 275, type: 'solid' }); // Pilar volcánico
-    platforms.push({ x: 750, y: 510, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 920, y: 575, w: 120, h: 24, type: 'shrinking' });
-
-  } else if (lvl === 21) {
-    title = 'Platforms 3: Shrink & Drop';
-    // Alternancia perversa de plataformas que se encogen y suelos falsos
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 115, h: 24, type: 'shrinking' });
-    platforms.push({ x: 390, y: 520, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 290 });
-    platforms.push({ x: 550, y: 460, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 715, y: 520, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 290 });
-    platforms.push({ x: 880, y: 580, w: 120, h: 24, type: 'shrinking' });
-
-  } else if (lvl === 22) {
-    title = 'Doors 3: High Ledge Goal';
-    // La puerta está en cornisa alta, la plataforma baja es falsa
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 575, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 395, y: 510, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 565, y: 445, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 740, y: 445, w: 130, h: 24, type: 'shrinking' });
-    platforms.push({ x: 920, y: 510, w: 140, h: 24, type: 'solid' });
-    exitDoor = { x: 970, y: 450, w: 40, h: 60 };
-
-  } else if (lvl === 23) {
-    title = 'Spikes 6: Stalactite Rain';
-    // Triple estalactita sobre el foso de lava
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 390, y: 520, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 550, y: 460, w: 125, h: 24, type: 'solid' });
-    platforms.push({ x: 720, y: 520, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 890, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'falling_spikes', x: 430, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-    traps.push({ type: 'falling_spikes', x: 590, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-    traps.push({ type: 'falling_spikes', x: 760, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-
-  } else if (lvl === 24) {
-    title = 'Shrink 3: The Rapid Ascent';
-    // Escalera de ascenso rápido donde cada escalón se derrite
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 585, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 380, y: 525, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 530, y: 465, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 680, y: 410, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 840, y: 475, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 970, y: 550, w: 110, h: 24, type: 'solid' });
-
-  } else if (lvl === 25) {
-    title = 'Doors 4: Triple Impostor';
-    // 3 puertas falsas distribuidas en cornisas
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 575, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 395, y: 510, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 570, y: 450, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 750, y: 510, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 925, y: 575, w: 120, h: 24, type: 'solid' });
-    fakeDoors.push({ x: 270, y: 515, w: 40, h: 60 });
-    fakeDoors.push({ x: 440, y: 450, w: 40, h: 60 });
-    fakeDoors.push({ x: 790, y: 450, w: 40, h: 60 });
-
-  } else if (lvl === 26) {
-    title = 'Pits 6: Deceptive Path';
-    // Camino inferior es falso; camino superior requiere saltar con precisión
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 220, y: 580, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 370, y: 520, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 540, y: 460, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 710, y: 520, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 880, y: 580, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-
-  } else if (lvl === 27) {
-    title = 'Push 4: Tight Squeeze';
-    // Techo bajo y foso con pinchos emergentes
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 420, y: 40, w: 200, h: 370, type: 'solid' }); // Techo bajo
-    platforms.push({ x: 400, y: 530, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 630, y: 530, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 860, y: 580, w: 120, h: 24, type: 'shrinking' });
-    traps.push({ type: 'rising_spikes', x: 545, y: 665, w: 35, h: 25, triggerDist: 50 });
-
-  } else if (lvl === 28) {
-    title = 'Spikes 7: Magma Ambush';
-    // Saltos largos entre plataformas con pinchos sorpresa
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 240, y: 580, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 420, y: 520, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 600, y: 460, w: 130, h: 24, type: 'shrinking' });
-    platforms.push({ x: 780, y: 520, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 950, y: 580, w: 120, h: 24, type: 'shrinking' });
-    traps.push({ type: 'rising_spikes', x: 650, y: 665, w: 35, h: 25, triggerDist: 50 });
-
-  } else if (lvl === 29) {
-    title = 'Platforms 4: Fast Collapse';
-    // Plataformas falsas con tiempo de colapso de 250ms
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 250 });
-    platforms.push({ x: 390, y: 520, w: 115, h: 24, type: 'solid' });
-    platforms.push({ x: 550, y: 460, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 250 });
-    platforms.push({ x: 710, y: 520, w: 115, h: 24, type: 'solid' });
-    platforms.push({ x: 870, y: 580, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 250 });
-
-  } else if (lvl === 30) {
-    title = 'Gauntlet 1: Volcanic Chaos';
-    // Primer Gauntlet: encogimiento + colapso + estalactita
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 115, h: 24, type: 'shrinking' });
-    platforms.push({ x: 390, y: 520, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 550, y: 460, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 715, y: 520, w: 115, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 880, y: 580, w: 115, h: 24, type: 'shrinking' });
-    traps.push({ type: 'falling_spikes', x: 590, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-    traps.push({ type: 'rising_spikes', x: 360, y: 665, w: 35, h: 25, triggerDist: 50 });
-
-  } else if (lvl === 31) {
-    title = 'Shrink 4: Vanishing Tower';
-    // Torre de plataformas encogibles hacia la cima
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 585, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 385, y: 525, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 540, y: 465, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 700, y: 525, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 860, y: 585, w: 110, h: 24, type: 'shrinking' });
-
-  } else if (lvl === 32) {
-    title = 'Doors 5: Running Goal';
-    // Puerta al final de plataformas angostas con puerta señuelo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 400, y: 520, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 570, y: 460, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 740, y: 520, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 910, y: 580, w: 120, h: 24, type: 'solid' });
-    fakeDoors.push({ x: 610, y: 400, w: 40, h: 60 });
-
-  } else if (lvl === 33) {
-    title = 'Spikes 8: Needle Corridor';
-    // Pasillo horizontal ajustado entre pinchos y lava
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 110, h: 24, type: 'solid' });
-    platforms.push({ x: 380, y: 530, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 540, y: 530, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 700, y: 530, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 860, y: 580, w: 110, h: 24, type: 'solid' });
-    traps.push({ type: 'falling_spikes', x: 440, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-    traps.push({ type: 'falling_spikes', x: 740, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-
-  } else if (lvl === 34) {
-    title = 'Gauntlet 2: The Magma Trial';
-    // Última prueba volcánica antes del Titán
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 110, h: 24, type: 'shrinking' });
-    platforms.push({ x: 385, y: 520, w: 110, h: 24, type: 'fake_floor', collapseDelayMs: 270 });
-    platforms.push({ x: 540, y: 460, w: 120, h: 24, type: 'shrinking' });
-    platforms.push({ x: 705, y: 520, w: 110, h: 24, type: 'fake_floor', collapseDelayMs: 270 });
-    platforms.push({ x: 870, y: 580, w: 110, h: 24, type: 'shrinking' });
-    traps.push({ type: 'rising_spikes', x: 510, y: 665, w: 35, h: 25, triggerDist: 50 });
-    traps.push({ type: 'falling_spikes', x: 760, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-
-  // -------------------------------------------------------------------------
-  // ZONA 3 (Niveles 36 a 49) - Inframundo: Gravity Flips, Ceiling Parkour, Chaos
-  // -------------------------------------------------------------------------
-  } else if (lvl === 36) {
-    title = 'Gravity 1: Upside Down';
-    // Introducción a la inversión gravitatoria: pista en el techo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    // Zona de inversión en el centro
-    traps.push({ type: 'gravity_inverter_zone', x: 420, y: 80, w: 140, h: 480 });
-    // Plataformas en el techo
-    platforms.push({ x: 460, y: 160, w: 150, h: 24, type: 'solid' });
-    platforms.push({ x: 670, y: 160, w: 150, h: 24, type: 'solid' });
-    platforms.push({ x: 880, y: 580, w: 120, h: 24, type: 'solid' });
-
-  } else if (lvl === 37) {
-    title = 'Gravity 2: Flip & Drop';
-    // Invertir para cruzar sobre foso de pinchos infinito y caer al suelo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 380, y: 80, w: 140, h: 480 });
-    platforms.push({ x: 440, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 640, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 840, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 970, y: 580, w: 120, h: 24, type: 'solid' });
-
-  } else if (lvl === 38) {
-    title = 'Gravity 3: Ceiling Spikes';
-    // Gravedad invertida con estalactitas en el techo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 400, y: 80, w: 140, h: 480 });
-    platforms.push({ x: 450, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 640, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 830, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 960, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'falling_spikes', x: 500, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-
-  } else if (lvl === 39) {
-    title = 'Platforms 5: Phantom Void';
-    // Plataformas falsas colapsables en el techo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 400, y: 80, w: 140, h: 480 });
-    platforms.push({ x: 450, y: 160, w: 130, h: 24, type: 'fake_floor', collapseDelayMs: 300 });
-    platforms.push({ x: 640, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 830, y: 160, w: 130, h: 24, type: 'fake_floor', collapseDelayMs: 300 });
-    platforms.push({ x: 960, y: 580, w: 120, h: 24, type: 'solid' });
-
-  } else if (lvl === 40) {
-    title = 'Gravity 4: Dual Horizon';
-    // Plataformas dobles: superior e inferior
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 400, y: 520, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 560, y: 80, w: 130, h: 480 });
-    platforms.push({ x: 620, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 820, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 960, y: 580, w: 120, h: 24, type: 'solid' });
-
-  } else if (lvl === 41) {
-    title = 'Doors 6: Sky Door';
-    // La puerta real está en el techo invertido
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 400, y: 80, w: 140, h: 480 });
-    platforms.push({ x: 460, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 660, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 860, y: 160, w: 200, h: 24, type: 'solid' });
-    exitDoor = { x: 960, y: 100, w: 40, h: 60 };
-
-  } else if (lvl === 42) {
-    title = 'Spikes 9: Crimson Needles';
-    // Pinchos carmesí en suelo y techo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 115, h: 24, type: 'solid' });
-    platforms.push({ x: 390, y: 520, w: 115, h: 24, type: 'solid' });
-    platforms.push({ x: 550, y: 460, w: 115, h: 24, type: 'solid' });
-    platforms.push({ x: 710, y: 520, w: 115, h: 24, type: 'solid' });
-    platforms.push({ x: 870, y: 580, w: 115, h: 24, type: 'solid' });
-    traps.push({ type: 'rising_spikes', x: 480, y: 665, w: 35, h: 25, triggerDist: 50 });
-    traps.push({ type: 'falling_spikes', x: 740, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-
-  } else if (lvl === 43) {
-    title = 'Push 5: Shadow Crush';
-    // Pared oscura que divide el nivel
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 380, y: 80, w: 130, h: 480 });
-    platforms.push({ x: 440, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 600, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 760, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 930, y: 580, w: 120, h: 24, type: 'solid' });
-
-  } else if (lvl === 44) {
-    title = 'Gravity 5: The Inversion Switch';
-    // Zonas alternadas de gravedad
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 115, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 370, y: 80, w: 120, h: 480 });
-    platforms.push({ x: 430, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 610, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 790, y: 520, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 940, y: 580, w: 120, h: 24, type: 'solid' });
-
-  } else if (lvl === 45) {
-    title = 'Doors 7: Nether Maze';
-    // Puertas falsas en el techo y puerta real en suelo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 390, y: 80, w: 130, h: 480 });
-    platforms.push({ x: 450, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 650, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 850, y: 160, w: 140, h: 24, type: 'solid' });
-    platforms.push({ x: 950, y: 580, w: 130, h: 24, type: 'solid' });
-    fakeDoors.push({ x: 500, y: 100, w: 40, h: 60 });
-    fakeDoors.push({ x: 700, y: 100, w: 40, h: 60 });
-
-  } else if (lvl === 46) {
-    title = 'Gauntlet 3: Abyssal Leap';
-    // Gravedad invertida con plataformas colapsables en el techo
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 380, y: 80, w: 130, h: 480 });
-    platforms.push({ x: 440, y: 160, w: 130, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 630, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 820, y: 160, w: 130, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 960, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'falling_spikes', x: 670, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-
-  } else if (lvl === 47) {
-    title = 'Gauntlet 4: The Chaos Bridge';
-    // Puente dominó invertido con estalactitas
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'gravity_inverter_zone', x: 370, y: 80, w: 130, h: 480 });
-    platforms.push({ x: 430, y: 160, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 270 });
-    platforms.push({ x: 590, y: 160, w: 120, h: 24, type: 'fake_floor', collapseDelayMs: 270 });
-    platforms.push({ x: 750, y: 160, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 930, y: 580, w: 120, h: 24, type: 'solid' });
-    traps.push({ type: 'falling_spikes', x: 610, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-
-  } else if (lvl === 48) {
-    title = 'Gauntlet 5: Precision Hell';
-    // Parkour de alta dificultad con pinchos reactivos en cada descanso
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 110, h: 24, type: 'solid' });
-    platforms.push({ x: 380, y: 520, w: 110, h: 24, type: 'fake_floor', collapseDelayMs: 270 });
-    platforms.push({ x: 535, y: 460, w: 120, h: 24, type: 'solid' });
-    platforms.push({ x: 700, y: 520, w: 110, h: 24, type: 'fake_floor', collapseDelayMs: 270 });
-    platforms.push({ x: 860, y: 580, w: 110, h: 24, type: 'solid' });
-    traps.push({ type: 'rising_spikes', x: 500, y: 665, w: 35, h: 25, triggerDist: 50 });
-    traps.push({ type: 'falling_spikes', x: 580, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
-
-  } else if (lvl === 49) {
-    title = 'Gauntlet 6: Penultimate Trial';
-    // El examen final antes de la Puerta Maestra: todo combinado
-    addBase(0, 180, 1080, 200);
-    platforms.push({ x: 230, y: 580, w: 115, h: 24, type: 'shrinking' });
-    traps.push({ type: 'gravity_inverter_zone', x: 380, y: 80, w: 130, h: 480 });
-    platforms.push({ x: 440, y: 160, w: 125, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 620, y: 160, w: 130, h: 24, type: 'solid' });
-    platforms.push({ x: 800, y: 160, w: 125, h: 24, type: 'fake_floor', collapseDelayMs: 280 });
-    platforms.push({ x: 950, y: 580, w: 120, h: 24, type: 'solid' });
-    fakeDoors.push({ x: 665, y: 100, w: 40, h: 60 });
-    traps.push({ type: 'falling_spikes', x: 500, y: 45, w: 24, h: 32, triggerRangeX: 45, fallSpeed: 8.5 });
+    if (spec.exitHigh) {
+      const last = route[route.length - 1];
+      exitDoor = { x: last.x + 25, y: last.y - 60, w: 40, h: 60 };
+    }
   }
 
   return {

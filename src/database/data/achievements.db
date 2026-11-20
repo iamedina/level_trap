@@ -1,8 +1,8 @@
-{"id":4,"code":"impostor","name":"Impostor","description":"Intentar entrar en 3 puertas falsas distintas.","icon":"🚪","created_at":{"$$date":1795200960623},"_id":"1NN2ImZmuDMJ84Xm"}
-{"id":3,"code":"unstoppable","name":"Imparable","description":"Superar 5 niveles consecutivos sin acumular muertes.","icon":"⚡","created_at":{"$$date":1795200960622},"_id":"BL2jbfF0dHGUsTFw"}
-{"id":1,"code":"victim_innocent","name":"Víctima Inocente","description":"Morir durante el primer segundo de juego en el Nivel 1.","icon":"🪦","created_at":{"$$date":1795200960621},"_id":"TvYXpNJODjhc082b"}
-{"id":5,"code":"gravity_master","name":"Maestro de la Gravedad","description":"Sobrevivir 30 segundos seguidos en gravedad invertida.","icon":"🔄","created_at":{"$$date":1795200960624},"_id":"kvZhrz55gmwS8HXx"}
-{"id":6,"code":"legend_level_trap","name":"Leyenda de Level Trap","description":"Derrotar al Jefe Final del Nivel 50 y completar el juego.","icon":"👑","created_at":{"$$date":1795200960624},"_id":"nXu8XeiDD6AvCXpW"}
-{"id":2,"code":"total_paranoia","name":"Paranoia Total","description":"Saltar 10 veces consecutivas en el mismo bloque antes de avanzar.","icon":"👀","created_at":{"$$date":1795200960622},"_id":"xHF9gjJll5MxqBV7"}
+{"id":4,"code":"impostor","name":"Impostor","description":"Intentar entrar en 3 puertas falsas distintas.","icon":"🚪","created_at":{"$$date":1795207784214},"_id":"Fr27VxwFCYjyyWhD"}
+{"id":5,"code":"gravity_master","name":"Maestro de la Gravedad","description":"Sobrevivir 30 segundos seguidos en gravedad invertida.","icon":"🔄","created_at":{"$$date":1795207784215},"_id":"KSMOlv3xxMlfITUw"}
+{"id":6,"code":"legend_level_trap","name":"Leyenda de Level Trap","description":"Derrotar al Jefe Final del Nivel 50 y completar el juego.","icon":"👑","created_at":{"$$date":1795207784216},"_id":"XqRmawOHdcX7lUff"}
+{"id":3,"code":"unstoppable","name":"Imparable","description":"Superar 5 niveles consecutivos sin acumular muertes.","icon":"⚡","created_at":{"$$date":1795207784214},"_id":"g0Vwb4q5UcsfUOJY"}
+{"id":2,"code":"total_paranoia","name":"Paranoia Total","description":"Saltar 10 veces consecutivas en el mismo bloque antes de avanzar.","icon":"👀","created_at":{"$$date":1795207784213},"_id":"geZy3zd5KhTqktLF"}
+{"id":1,"code":"victim_innocent","name":"Víctima Inocente","description":"Morir durante el primer segundo de juego en el Nivel 1.","icon":"🪦","created_at":{"$$date":1795207784212},"_id":"j9fzeUu7KtRQ4Hms"}
 {"$$indexCreated":{"fieldName":"code","unique":true,"sparse":false}}
 {"$$indexCreated":{"fieldName":"code","unique":true}}
