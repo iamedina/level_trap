@@ -44,6 +44,8 @@ async function runTests() {
     const queue = [...startPlats];
     queue.forEach((p) => visited.add(p));
 
+    const inverters = (data.traps || []).filter((t) => t.type === 'gravity_inverter_zone');
+
     while (queue.length > 0) {
       const curr = queue.shift();
       for (const next of plats) {
@@ -54,7 +56,21 @@ async function runTests() {
         const canDrop = (vDiff > 0 && vDiff <= 300 && hGap <= 170);
         const canWalk = (Math.abs(vDiff) <= 20 && hGap <= 80);
 
-        if (canJumpUp || canDrop || canWalk) {
+        // Conexión dinámica por zonas de gravedad invertida (Zona 3: Inframundo)
+        let canInvertToCeiling = false;
+        let canDropFromCeiling = false;
+
+        if (inverters.length > 0) {
+          const nearInverter = inverters.some((inv) => (curr.x + curr.w) >= (inv.x - 130) && curr.x <= (inv.x + inv.w + 130));
+          if (curr.y > 400 && next.y < 300 && nearInverter && hGap <= 200) {
+            canInvertToCeiling = true;
+          }
+          if (curr.y < 300 && next.y > 400 && hGap <= 200) {
+            canDropFromCeiling = true;
+          }
+        }
+
+        if (canJumpUp || canDrop || canWalk || canInvertToCeiling || canDropFromCeiling) {
           visited.add(next);
           queue.push(next);
         }
