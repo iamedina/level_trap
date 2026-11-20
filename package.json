@@ -7,11 +7,11 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "migrate": "knex migrate:latest",
-    "migrate:rollback": "knex migrate:rollback",
-    "seed": "knex seed:run"
+    "seed": "node src/database/seed_nedb.js",
+    "test": "node test_full_suite.js"
   },
   "dependencies": {
+    "@seald-io/nedb": "^4.1.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",

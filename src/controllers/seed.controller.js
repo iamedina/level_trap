@@ -7,7 +7,7 @@ const getDailySeed = async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-    let dailyRecord = await db('daily_seeds').where({ seed_date: today }).first();
+    let dailyRecord = await db.daily_seeds.findOneAsync({ seed_date: today });
 
     if (!dailyRecord) {
       // Generar semilla determinista basada en la fecha
@@ -23,19 +23,19 @@ const getDailySeed = async (req, res) => {
         specialRule: (seedValue % 2 === 0) ? 'Double Spike Velocity' : 'Low Friction Platforms'
       };
 
-      const [newId] = await db('daily_seeds').insert({
+      const newId = await db.getNextId('daily_seeds');
+      dailyRecord = await db.daily_seeds.insertAsync({
+        id: newId,
         seed_date: today,
         seed_value: seedValue,
         config: JSON.stringify(dailyConfig),
         created_at: new Date()
       });
-
-      dailyRecord = await db('daily_seeds').where({ id: newId }).first();
     }
 
     let parsedConfig = {};
     try {
-      parsedConfig = JSON.parse(dailyRecord.config);
+      parsedConfig = typeof dailyRecord.config === 'string' ? JSON.parse(dailyRecord.config) : dailyRecord.config;
     } catch (e) {
       parsedConfig = {};
     }
@@ -60,4 +60,3 @@ const getDailySeed = async (req, res) => {
 module.exports = {
   getDailySeed
 };
-

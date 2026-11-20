@@ -7,13 +7,10 @@ const listAchievements = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const allAchievements = await db('achievements')
-      .select('id', 'code', 'name', 'description', 'icon')
-      .orderBy('id', 'asc');
+    const allAchievements = await db.achievements.findAsync({});
+    allAchievements.sort((a, b) => a.id - b.id);
 
-    const userUnlocked = await db('user_achievements')
-      .where({ user_id: userId })
-      .select('achievement_id', 'unlocked_at');
+    const userUnlocked = await db.user_achievements.findAsync({ user_id: userId });
 
     const unlockedMap = new Map();
     userUnlocked.forEach((u) => {
@@ -30,13 +27,11 @@ const listAchievements = async (req, res) => {
       unlockedAt: unlockedMap.get(ach.id) || null
     }));
 
-    const totalUnlocked = userUnlocked.length;
-
     return res.status(200).json({
       success: true,
       data: {
         total: allAchievements.length,
-        totalUnlocked,
+        totalUnlocked: userUnlocked.length,
         achievements: result
       }
     });
@@ -64,7 +59,7 @@ const unlockAchievement = async (req, res) => {
       });
     }
 
-    const achievement = await db('achievements').where({ code }).first();
+    const achievement = await db.achievements.findOneAsync({ code });
 
     if (!achievement) {
       return res.status(404).json({
@@ -74,9 +69,10 @@ const unlockAchievement = async (req, res) => {
     }
 
     // Verificar si ya fue desbloqueado
-    const alreadyUnlocked = await db('user_achievements')
-      .where({ user_id: userId, achievement_id: achievement.id })
-      .first();
+    const alreadyUnlocked = await db.user_achievements.findOneAsync({
+      user_id: userId,
+      achievement_id: achievement.id
+    });
 
     if (alreadyUnlocked) {
       return res.status(200).json({
@@ -92,7 +88,9 @@ const unlockAchievement = async (req, res) => {
 
     // Registrar en BD
     const now = new Date();
-    await db('user_achievements').insert({
+    const newId = await db.getNextId('user_achievements');
+    await db.user_achievements.insertAsync({
+      id: newId,
       user_id: userId,
       achievement_id: achievement.id,
       unlocked_at: now
@@ -120,4 +118,3 @@ module.exports = {
   listAchievements,
   unlockAchievement
 };
-

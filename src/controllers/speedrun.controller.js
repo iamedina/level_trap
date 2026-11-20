@@ -37,7 +37,7 @@ const saveRecord = async (req, res) => {
     // Obtener tiempo base de referencia
     let baseTimeMs = 60000;
     if (levelNumber > 0) {
-      const level = await db('levels').where({ level_number: levelNumber }).first();
+      const level = await db.levels.findOneAsync({ level_number: levelNumber });
       if (level) {
         baseTimeMs = level.base_time_ms;
       }
@@ -49,9 +49,10 @@ const saveRecord = async (req, res) => {
     const calculatedScore = calculateScore(baseTimeMs, timeMs, deaths || 0);
 
     // Verificar si ya existe un récord previo de este usuario para el nivel
-    const existingRecord = await db('speedrun_records')
-      .where({ user_id: userId, level_number: levelNumber })
-      .first();
+    const existingRecord = await db.speedrun_records.findOneAsync({
+      user_id: userId,
+      level_number: levelNumber
+    });
 
     let isNewBest = false;
     let recordId = null;
@@ -60,7 +61,9 @@ const saveRecord = async (req, res) => {
 
     if (!existingRecord) {
       isNewBest = true;
-      const [insertedId] = await db('speedrun_records').insert({
+      const newId = await db.getNextId('speedrun_records');
+      const inserted = await db.speedrun_records.insertAsync({
+        id: newId,
         user_id: userId,
         level_number: levelNumber,
         time_ms: timeMs,
@@ -70,18 +73,21 @@ const saveRecord = async (req, res) => {
         created_at: new Date(),
         updated_at: new Date()
       });
-      recordId = insertedId;
+      recordId = inserted.id;
     } else if (timeMs < existingRecord.time_ms) {
       isNewBest = true;
-      await db('speedrun_records')
-        .where({ id: existingRecord.id })
-        .update({
-          time_ms: timeMs,
-          deaths: deaths !== undefined ? deaths : existingRecord.deaths,
-          score: Math.max(calculatedScore, existingRecord.score),
-          ghost_data: ghostString || existingRecord.ghost_data,
-          updated_at: new Date()
-        });
+      await db.speedrun_records.updateAsync(
+        { id: existingRecord.id },
+        {
+          $set: {
+            time_ms: timeMs,
+            deaths: deaths !== undefined ? deaths : existingRecord.deaths,
+            score: Math.max(calculatedScore, existingRecord.score),
+            ghost_data: ghostString || existingRecord.ghost_data,
+            updated_at: new Date()
+          }
+        }
+      );
       recordId = existingRecord.id;
     }
 
@@ -119,27 +125,23 @@ const getGhostRecord = async (req, res) => {
       });
     }
 
-    // Buscar el récord global con menor tiempo que contenga datos de fantasma
-    const bestRecord = await db('speedrun_records')
-      .join('users', 'speedrun_records.user_id', 'users.id')
-      .where('speedrun_records.level_number', levelNumber)
-      .whereNotNull('speedrun_records.ghost_data')
-      .select(
-        'speedrun_records.id',
-        'speedrun_records.time_ms',
-        'speedrun_records.deaths',
-        'speedrun_records.ghost_data',
-        'users.username'
-      )
-      .orderBy('speedrun_records.time_ms', 'asc')
-      .first();
+    // Buscar los récords del nivel que contengan ghost_data
+    const records = await db.speedrun_records.findAsync({
+      level_number: levelNumber,
+      ghost_data: { $ne: null }
+    });
 
-    if (!bestRecord) {
+    if (!records || records.length === 0) {
       return res.status(404).json({
         success: false,
         error: `No hay silueta fantasma registrada para el nivel ${levelNumber}.`
       });
     }
+
+    records.sort((a, b) => a.time_ms - b.time_ms);
+    const bestRecord = records[0];
+
+    const user = await db.users.findOneAsync({ id: bestRecord.user_id });
 
     let parsedGhost = [];
     try {
@@ -152,7 +154,7 @@ const getGhostRecord = async (req, res) => {
       success: true,
       data: {
         recordId: bestRecord.id,
-        holderUsername: bestRecord.username,
+        holderUsername: user ? user.username : 'Anónimo',
         timeMs: bestRecord.time_ms,
         ghostData: parsedGhost
       }
@@ -174,24 +176,22 @@ const getLeaderboard = async (req, res) => {
     const levelNumber = req.query.level ? parseInt(req.query.level, 10) : 0; // 0 = Global Full Run por defecto
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
 
-    const records = await db('speedrun_records')
-      .join('users', 'speedrun_records.user_id', 'users.id')
-      .where('speedrun_records.level_number', levelNumber)
-      .select(
-        'speedrun_records.id',
-        'speedrun_records.time_ms',
-        'speedrun_records.deaths',
-        'speedrun_records.score',
-        'speedrun_records.created_at',
-        'users.id as user_id',
-        'users.username'
-      )
-      .orderBy('speedrun_records.score', 'desc')
-      .orderBy('speedrun_records.time_ms', 'asc')
-      .limit(limit);
+    const records = await db.speedrun_records.findAsync({ level_number: levelNumber });
 
-    // Formatear tiempos legibles (00:00.000)
-    const formatted = records.map((rec, index) => {
+    // Ordenar por score DESC, luego time_ms ASC
+    records.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.time_ms - b.time_ms;
+    });
+
+    const sliced = records.slice(0, limit);
+
+    // Obtener nombres de usuario
+    const userIds = [...new Set(sliced.map((r) => r.user_id))];
+    const users = await db.users.findAsync({ id: { $in: userIds } });
+    const userMap = new Map(users.map((u) => [u.id, u.username]));
+
+    const formatted = sliced.map((rec, index) => {
       const minutes = Math.floor(rec.time_ms / 60000);
       const seconds = Math.floor((rec.time_ms % 60000) / 1000);
       const millis = rec.time_ms % 1000;
@@ -200,7 +200,7 @@ const getLeaderboard = async (req, res) => {
       return {
         rank: index + 1,
         userId: rec.user_id,
-        username: rec.username,
+        username: userMap.get(rec.user_id) || 'Jugador',
         timeMs: rec.time_ms,
         timeFormatted: formattedTime,
         deaths: rec.deaths,
@@ -231,4 +231,3 @@ module.exports = {
   getGhostRecord,
   getLeaderboard
 };
-

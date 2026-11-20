@@ -1,0 +1,6 @@
+node_modules/
+.env
+.DS_Store
+*.log
+src/database/data/*.db
+src/database/level_trap.sqlite

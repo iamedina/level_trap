@@ -19,8 +19,8 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await db('users').where({ id: decoded.userId }).first();
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'super_secret_jwt_key_level_trap_2026_production_ready');
+    const user = await db.users.findOneAsync({ id: decoded.userId });
 
     if (!user) {
       return res.status(401).json({
@@ -51,4 +51,3 @@ const authenticateToken = async (req, res, next) => {
 };
 
 module.exports = authenticateToken;
-

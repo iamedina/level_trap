@@ -6,10 +6,12 @@ const db = require('../config/database');
 const getProgress = async (req, res) => {
   try {
     const userId = req.user.id;
-    let progress = await db('player_progress').where({ user_id: userId }).first();
+    let progress = await db.player_progress.findOneAsync({ user_id: userId });
 
     if (!progress) {
-      const [newId] = await db('player_progress').insert({
+      const newId = await db.getNextId('player_progress');
+      progress = await db.player_progress.insertAsync({
+        id: newId,
         user_id: userId,
         current_level: 1,
         max_level_reached: 1,
@@ -18,8 +20,6 @@ const getProgress = async (req, res) => {
         created_at: new Date(),
         updated_at: new Date()
       });
-
-      progress = await db('player_progress').where({ id: newId }).first();
     }
 
     return res.status(200).json({
@@ -41,15 +41,20 @@ const getProgress = async (req, res) => {
 const getAllLevels = async (req, res) => {
   try {
     const userId = req.user.id;
-    const progress = await db('player_progress').where({ user_id: userId }).first();
+    const progress = await db.player_progress.findOneAsync({ user_id: userId });
     const maxLevel = progress ? progress.max_level_reached : 1;
 
-    const levels = await db('levels')
-      .select('id', 'level_number', 'zone_id', 'zone_name', 'title', 'is_boss_level', 'base_time_ms')
-      .orderBy('level_number', 'asc');
+    const levels = await db.levels.findAsync({});
+    levels.sort((a, b) => a.level_number - b.level_number);
 
     const mappedLevels = levels.map((lvl) => ({
-      ...lvl,
+      id: lvl.id || lvl.level_number,
+      level_number: lvl.level_number,
+      zone_id: lvl.zone_id,
+      zone_name: lvl.zone_name,
+      title: lvl.title,
+      is_boss_level: lvl.is_boss_level,
+      base_time_ms: lvl.base_time_ms,
       is_unlocked: lvl.level_number <= maxLevel,
       is_current: lvl.level_number === (progress ? progress.current_level : 1)
     }));
@@ -84,7 +89,7 @@ const getLevel = async (req, res) => {
       });
     }
 
-    const level = await db('levels').where({ level_number: levelNumber }).first();
+    const level = await db.levels.findOneAsync({ level_number: levelNumber });
 
     if (!level) {
       return res.status(404).json({
@@ -95,7 +100,7 @@ const getLevel = async (req, res) => {
 
     let parsedData = {};
     try {
-      parsedData = JSON.parse(level.data);
+      parsedData = typeof level.data === 'string' ? JSON.parse(level.data) : level.data;
     } catch (parseErr) {
       console.error(`Error al parsear layout del nivel ${levelNumber}:`, parseErr);
       parsedData = {};
@@ -138,7 +143,9 @@ const registerDeath = async (req, res) => {
     }
 
     // 1. Guardar en registro histórico de muertes
-    await db('death_logs').insert({
+    const newDeathId = await db.getNextId('death_logs');
+    await db.death_logs.insertAsync({
+      id: newDeathId,
       user_id: userId,
       level_number: levelNumber,
       trap_type: trapType,
@@ -149,9 +156,11 @@ const registerDeath = async (req, res) => {
     });
 
     // 2. Incrementar contador en progreso del jugador
-    let progress = await db('player_progress').where({ user_id: userId }).first();
+    let progress = await db.player_progress.findOneAsync({ user_id: userId });
     if (!progress) {
-      await db('player_progress').insert({
+      const newProgId = await db.getNextId('player_progress');
+      progress = await db.player_progress.insertAsync({
+        id: newProgId,
         user_id: userId,
         current_level: levelNumber,
         max_level_reached: levelNumber,
@@ -160,25 +169,28 @@ const registerDeath = async (req, res) => {
         updated_at: new Date()
       });
     } else {
-      await db('player_progress')
-        .where({ user_id: userId })
-        .increment('total_deaths', 1)
-        .update({ updated_at: new Date() });
+      const newDeaths = (progress.total_deaths || 0) + 1;
+      await db.player_progress.updateAsync(
+        { user_id: userId },
+        { $set: { total_deaths: newDeaths, updated_at: new Date() } }
+      );
+      progress.total_deaths = newDeaths;
     }
-
-    const updatedProgress = await db('player_progress').where({ user_id: userId }).first();
 
     // 3. Evaluar logro humorístico: "Víctima Inocente"
     // Regla: Morir durante el primer segundo de juego (<= 1000 ms) en el Nivel 1.
     const unlockedAchievements = [];
     if (levelNumber === 1 && survivalTimeMs && survivalTimeMs <= 1000) {
-      const ach = await db('achievements').where({ code: 'victim_innocent' }).first();
+      const ach = await db.achievements.findOneAsync({ code: 'victim_innocent' });
       if (ach) {
-        const alreadyHas = await db('user_achievements')
-          .where({ user_id: userId, achievement_id: ach.id })
-          .first();
+        const alreadyHas = await db.user_achievements.findOneAsync({
+          user_id: userId,
+          achievement_id: ach.id
+        });
         if (!alreadyHas) {
-          await db('user_achievements').insert({
+          const newUaId = await db.getNextId('user_achievements');
+          await db.user_achievements.insertAsync({
+            id: newUaId,
             user_id: userId,
             achievement_id: ach.id,
             unlocked_at: new Date()
@@ -192,7 +204,7 @@ const registerDeath = async (req, res) => {
       success: true,
       message: 'Muerte auditada en base de datos.',
       data: {
-        totalDeaths: updatedProgress.total_deaths,
+        totalDeaths: progress.total_deaths,
         unlockedAchievements
       }
     });
@@ -220,13 +232,15 @@ const completeLevel = async (req, res) => {
       });
     }
 
-    let progress = await db('player_progress').where({ user_id: userId }).first();
+    let progress = await db.player_progress.findOneAsync({ user_id: userId });
     const nextLevel = Math.min(50, levelNumber + 1);
     const newMax = Math.max(progress ? progress.max_level_reached : 1, nextLevel);
     const isGameFinished = (levelNumber === 50);
 
     if (!progress) {
-      await db('player_progress').insert({
+      const newProgId = await db.getNextId('player_progress');
+      progress = await db.player_progress.insertAsync({
+        id: newProgId,
         user_id: userId,
         current_level: nextLevel,
         max_level_reached: newMax,
@@ -236,25 +250,36 @@ const completeLevel = async (req, res) => {
         updated_at: new Date()
       });
     } else {
-      await db('player_progress').where({ user_id: userId }).update({
-        current_level: nextLevel,
-        max_level_reached: newMax,
-        game_completed: isGameFinished || progress.game_completed,
-        updated_at: new Date()
-      });
+      await db.player_progress.updateAsync(
+        { user_id: userId },
+        {
+          $set: {
+            current_level: nextLevel,
+            max_level_reached: newMax,
+            game_completed: isGameFinished || progress.game_completed,
+            updated_at: new Date()
+          }
+        }
+      );
+      progress.current_level = nextLevel;
+      progress.max_level_reached = newMax;
+      progress.game_completed = isGameFinished || progress.game_completed;
     }
 
     const unlockedAchievements = [];
 
     // Evaluar logro: "Leyenda de Level Trap" al derrotar el nivel 50
     if (isGameFinished) {
-      const ach = await db('achievements').where({ code: 'legend_level_trap' }).first();
+      const ach = await db.achievements.findOneAsync({ code: 'legend_level_trap' });
       if (ach) {
-        const alreadyHas = await db('user_achievements')
-          .where({ user_id: userId, achievement_id: ach.id })
-          .first();
+        const alreadyHas = await db.user_achievements.findOneAsync({
+          user_id: userId,
+          achievement_id: ach.id
+        });
         if (!alreadyHas) {
-          await db('user_achievements').insert({
+          const newUaId = await db.getNextId('user_achievements');
+          await db.user_achievements.insertAsync({
+            id: newUaId,
             user_id: userId,
             achievement_id: ach.id,
             unlocked_at: new Date()
@@ -264,13 +289,11 @@ const completeLevel = async (req, res) => {
       }
     }
 
-    const updated = await db('player_progress').where({ user_id: userId }).first();
-
     return res.status(200).json({
       success: true,
       message: isGameFinished ? '¡Juego completado con éxito!' : `Nivel ${levelNumber} superado.`,
       data: {
-        progress: updated,
+        progress,
         unlockedAchievements
       }
     });
@@ -290,4 +313,3 @@ module.exports = {
   registerDeath,
   completeLevel
 };
-

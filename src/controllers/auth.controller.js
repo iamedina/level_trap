@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, {
+  return jwt.sign({ userId }, process.env.JWT_SECRET || 'super_secret_jwt_key_level_trap_2026_production_ready', {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d'
   });
 };
@@ -45,11 +45,10 @@ const register = async (req, res) => {
       });
     }
 
-    // Verificar si el usuario o email ya existen en la base de datos real
-    const existingUser = await db('users')
-      .where('username', trimmedUsername)
-      .orWhere('email', trimmedEmail)
-      .first();
+    // Verificar si el usuario o email ya existen en la base de datos local
+    const existingUser = await db.users.findOneAsync({
+      $or: [{ username: trimmedUsername }, { email: trimmedEmail }]
+    });
 
     if (existingUser) {
       if (existingUser.username === trimmedUsername) {
@@ -67,8 +66,10 @@ const register = async (req, res) => {
     // Hashing seguro de contraseña con bcrypt
     const saltRounds = 10;
     const password_hash = await bcrypt.hash(password, saltRounds);
+    const newUserId = await db.getNextId('users');
 
-    const [newUserId] = await db('users').insert({
+    const newUser = await db.users.insertAsync({
+      id: newUserId,
       username: trimmedUsername,
       email: trimmedEmail,
       password_hash,
@@ -76,14 +77,14 @@ const register = async (req, res) => {
       updated_at: new Date()
     });
 
-    const token = generateToken(newUserId);
+    const token = generateToken(newUser.id);
 
     return res.status(201).json({
       success: true,
       message: 'Cuenta creada exitosamente en Level Trap.',
       data: {
         user: {
-          id: newUserId,
+          id: newUser.id,
           username: trimmedUsername,
           email: trimmedEmail
         },
@@ -101,22 +102,22 @@ const register = async (req, res) => {
 
 const login = async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    const rawIdentifier = req.body.identifier || req.body.username || req.body.email;
+    const { password } = req.body;
 
-    if (!identifier || !password) {
+    if (!rawIdentifier || !password) {
       return res.status(400).json({
         success: false,
         error: 'Por favor, ingresa tu usuario o correo y contraseña.'
       });
     }
 
-    const trimmedIdentifier = identifier.trim();
+    const trimmedIdentifier = rawIdentifier.trim();
 
     // Búsqueda por username o email
-    const user = await db('users')
-      .where('username', trimmedIdentifier)
-      .orWhere('email', trimmedIdentifier.toLowerCase())
-      .first();
+    const user = await db.users.findOneAsync({
+      $or: [{ username: trimmedIdentifier }, { email: trimmedIdentifier.toLowerCase() }]
+    });
 
     if (!user) {
       return res.status(401).json({
@@ -178,4 +179,3 @@ module.exports = {
   login,
   getProfile
 };
-

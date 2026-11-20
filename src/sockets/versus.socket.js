@@ -14,14 +14,16 @@ function setupVersusSockets(io, db) {
     socket.on('request_daily_seed', async () => {
       try {
         const today = new Date().toISOString().slice(0, 10);
-        let dailyRecord = await db('daily_seeds').where({ seed_date: today }).first();
+        let dailyRecord = await db.daily_seeds.findOneAsync({ seed_date: today });
 
         if (!dailyRecord) {
           let seedValue = 0;
           for (let i = 0; i < today.length; i++) {
             seedValue = (seedValue * 31 + today.charCodeAt(i)) % 1000000;
           }
-          const [newId] = await db('daily_seeds').insert({
+          const newId = await db.getNextId('daily_seeds');
+          dailyRecord = await db.daily_seeds.insertAsync({
+            id: newId,
             seed_date: today,
             seed_value: seedValue,
             config: JSON.stringify({
@@ -31,12 +33,11 @@ function setupVersusSockets(io, db) {
             }),
             created_at: new Date()
           });
-          dailyRecord = await db('daily_seeds').where({ id: newId }).first();
         }
 
         let parsedConfig = {};
         try {
-          parsedConfig = JSON.parse(dailyRecord.config);
+          parsedConfig = typeof dailyRecord.config === 'string' ? JSON.parse(dailyRecord.config) : dailyRecord.config;
         } catch (e) {
           parsedConfig = {};
         }
@@ -189,4 +190,3 @@ function setupVersusSockets(io, db) {
 }
 
 module.exports = setupVersusSockets;
-

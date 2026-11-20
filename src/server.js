@@ -27,6 +27,7 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // Rate Limiting para Producción (Protección contra fuerza bruta y spam)
 const apiLimiter = rateLimit({
@@ -60,7 +61,7 @@ app.use('/api/auth/register', authLimiter);
 // Servir archivos estáticos del Frontend
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Montar Rutas de API REST (CERO MOCKS)
+// Montar Rutas de API REST
 app.use('/api/auth', authRoutes);
 app.use('/api/game', gameRoutes);
 app.use('/api/speedrun', speedrunRoutes);
@@ -70,18 +71,17 @@ app.use('/api/seed', seedRoutes);
 // Endpoint de salud del sistema
 app.get('/api/health', async (req, res) => {
   try {
-    await db.raw('SELECT 1');
-    const levelsCount = await db('levels').count('id as count').first();
-    const achievementsCount = await db('achievements').count('id as count').first();
+    const levelsCount = await db.levels.countAsync({});
+    const achievementsCount = await db.achievements.countAsync({});
 
     return res.status(200).json({
       success: true,
       message: 'Level Trap API & Database en línea',
-      database: process.env.DB_CLIENT || 'sqlite3',
-      environment: process.env.NODE_ENV || 'development',
+      database: 'nedb-embedded',
+      environment: NODE_ENV,
       stats: {
-        totalLevels: levelsCount.count,
-        totalAchievements: achievementsCount.count
+        totalLevels: levelsCount,
+        totalAchievements: achievementsCount
       }
     });
   } catch (error) {
@@ -106,16 +106,24 @@ setupVersusSockets(io, db);
 
 app.set('io', io);
 
-// Iniciar Servidor si se ejecuta directamente
-if (process.env.NODE_ENV !== 'test') {
-  server.listen(PORT, () => {
-    console.log(`====================================================`);
-    console.log(`🎮 LEVEL TRAP - Servidor Activo en http://localhost:${PORT}`);
-    console.log(`🗄️  Base de Datos: ${process.env.DB_CLIENT || 'sqlite3'}`);
-    console.log(`⚔️  WebSockets Versus 1v1 & Daily Seed inicializados`);
-    console.log(`⚡ Endpoints Core Activos: /api/auth, /api/game, /api/speedrun, /api/achievements, /api/seed`);
-    console.log(`====================================================`);
-  });
+// Iniciar Servidor con inicialización previa de colecciones
+async function startServer() {
+  await db.init();
+  if (NODE_ENV !== 'test') {
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`====================================================`);
+      console.log(`🎮 LEVEL TRAP - Servidor Activo en Puerto ${PORT}`);
+      console.log(`🌍 Entorno: ${NODE_ENV}`);
+      console.log(`🗄️  Base de Datos: NeDB Embedded (Zero Remote Protocols, Disk Persisted)`);
+      console.log(`⚔️  WebSockets Versus 1v1 & Daily Seed inicializados`);
+      console.log(`⚡ Endpoints Core Activos: /api/auth, /api/game, /api/speedrun, /api/achievements, /api/seed`);
+      console.log(`====================================================`);
+    });
+  }
 }
+
+startServer().catch((err) => {
+  console.error('Error al iniciar el servidor:', err);
+});
 
 module.exports = { app, server, io };
