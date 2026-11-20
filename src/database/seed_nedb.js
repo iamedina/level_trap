@@ -9,7 +9,14 @@ const db = require('../config/database');
  * - Ancho mínimo de plataforma: 90 px
  */
 async function seedNeDB() {
-  await db.init();
+  // Asegurar índices básicos sin bucle recursivo
+  try {
+    await db.users.ensureIndex({ fieldName: 'username', unique: true });
+    await db.users.ensureIndex({ fieldName: 'email', unique: true });
+    await db.levels.ensureIndex({ fieldName: 'level_number', unique: true });
+    await db.achievements.ensureIndex({ fieldName: 'code', unique: true });
+    await db.daily_seeds.ensureIndex({ fieldName: 'seed_date', unique: true });
+  } catch (e) {}
 
   // 1. POBLAR LOS 6 LOGROS HUMORÍSTICOS
   const achievements = [

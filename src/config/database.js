@@ -16,6 +16,8 @@ const createStore = (name) => {
   });
 };
 
+let isInitializing = false;
+
 const db = {
   users: createStore('users'),
   levels: createStore('levels'),
@@ -38,19 +40,21 @@ const db = {
 
   // Inicialización y autoseeding de la base de datos
   async init() {
-    // Índices de unicidad
+    if (isInitializing) return;
+    isInitializing = true;
     try {
-      await db.users.ensureIndex({ fieldName: 'username', unique: true });
-      await db.users.ensureIndex({ fieldName: 'email', unique: true });
-      await db.levels.ensureIndex({ fieldName: 'level_number', unique: true });
-      await db.achievements.ensureIndex({ fieldName: 'code', unique: true });
-      await db.daily_seeds.ensureIndex({ fieldName: 'seed_date', unique: true });
-    } catch (e) {
-      // Índices ya configurados
-    }
+      // Índices de unicidad
+      try {
+        await db.users.ensureIndex({ fieldName: 'username', unique: true });
+        await db.users.ensureIndex({ fieldName: 'email', unique: true });
+        await db.levels.ensureIndex({ fieldName: 'level_number', unique: true });
+        await db.achievements.ensureIndex({ fieldName: 'code', unique: true });
+        await db.daily_seeds.ensureIndex({ fieldName: 'seed_date', unique: true });
+      } catch (e) {
+        // Índices ya configurados
+      }
 
-    // Auto-seed si la base de datos está vacía (ideal para despliegues remotos)
-    try {
+      // Auto-seed si la base de datos está vacía (ideal para despliegues remotos)
       const levelsCount = await db.levels.countAsync({});
       if (levelsCount === 0) {
         console.log('📦 Base de datos vacía detectada. Ejecutando auto-seed inicial...');
@@ -58,7 +62,9 @@ const db = {
         await seedNeDB();
       }
     } catch (err) {
-      console.error('Error durante el auto-seed:', err);
+      console.error('Error durante init de base de datos:', err);
+    } finally {
+      isInitializing = false;
     }
   }
 };

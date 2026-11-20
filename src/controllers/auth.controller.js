@@ -46,12 +46,17 @@ const register = async (req, res) => {
     }
 
     // Verificar si el usuario o email ya existen en la base de datos local
+    const escapedUsername = trimmedUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const existingUser = await db.users.findOneAsync({
-      $or: [{ username: trimmedUsername }, { email: trimmedEmail }]
+      $or: [
+        { username: trimmedUsername },
+        { username: new RegExp(`^${escapedUsername}$`, 'i') },
+        { email: trimmedEmail }
+      ]
     });
 
     if (existingUser) {
-      if (existingUser.username === trimmedUsername) {
+      if (existingUser.username.toLowerCase() === trimmedUsername.toLowerCase()) {
         return res.status(409).json({
           success: false,
           error: 'El nombre de usuario ya está registrado por otro jugador.'
@@ -93,9 +98,15 @@ const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Error en registro:', error);
+    if (error.errorType === 'uniqueViolated' || error.key) {
+      return res.status(409).json({
+        success: false,
+        error: 'El nombre de usuario o correo electrónico ya se encuentra registrado.'
+      });
+    }
     return res.status(500).json({
       success: false,
-      error: 'Error interno del servidor al registrar el usuario.'
+      error: error.message || 'Error interno del servidor al registrar el usuario.'
     });
   }
 };

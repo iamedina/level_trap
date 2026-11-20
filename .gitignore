@@ -2,5 +2,10 @@ node_modules/
 .env
 .DS_Store
 *.log
-src/database/data/*.db
 src/database/level_trap.sqlite
+src/database/data/users.db
+src/database/data/player_progress.db
+src/database/data/death_logs.db
+src/database/data/speedrun_records.db
+src/database/data/user_achievements.db
+scratch_*.js

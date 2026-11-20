@@ -1,3 +1,4 @@
+process.env.NODE_ENV = 'test';
 const http = require('http');
 const { app, server, io } = require('./src/server');
 const db = require('./src/config/database');
