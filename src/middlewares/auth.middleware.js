@@ -22,18 +22,27 @@ const authenticateToken = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'super_secret_jwt_key_level_trap_2026_production_ready');
     const user = await db.users.findOneAsync({ id: decoded.userId });
 
-    if (!user) {
+    if (user) {
+      req.user = {
+        id: user.id,
+        username: user.username,
+        email: user.email
+      };
+    } else if (decoded.username && decoded.email) {
+      // Sesión firmada válida pero el datastore local fue reiniciado
+      // (disco efímero de Render). La identidad firmada basta para seguir
+      // autenticado; el progreso se reinicializa en /api/game/progress.
+      req.user = {
+        id: decoded.userId,
+        username: decoded.username,
+        email: decoded.email
+      };
+    } else {
       return res.status(401).json({
         success: false,
         error: 'Usuario no encontrado o sesión inválida.'
       });
     }
-
-    req.user = {
-      id: user.id,
-      username: user.username,
-      email: user.email
-    };
 
     next();
   } catch (error) {

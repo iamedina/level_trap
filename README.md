@@ -7,7 +7,7 @@
 
 **LEVEL TRAP** es un videojuego de plataformas 2D desarrollado en **JavaScript Puro (HTML5 Canvas)** sin frameworks pesados en el cliente, con un backend robusto en **Node.js, Express, Knex.js y WebSockets (Socket.io)**. 
 
-Implementa la política estricta de **CERO MOCKS**: no utiliza `localStorage` ni simulaciones en memoria; todas las muertes, el progreso, los tiempos de speedrun, los logros y el ranking global se auditan y persisten en una **base de datos real** (SQLite en desarrollo local, conmutable de inmediato a PostgreSQL para producción sin cambiar una sola consulta).
+Implementa la política estricta de **CERO MOCKS**: no simula progreso ni autenticación en memoria. El JWT real emitido por el servidor se conserva en `localStorage` del navegador para mantener la sesión entre pestañas y reinicios; todas las muertes, el progreso, los tiempos de speedrun, los logros y el ranking global se auditan y persisten en una **base de datos real** (NeDB embebido en disco; el esquema Knex permite migrar a PostgreSQL en producción sin cambiar una sola consulta).
 
 ---
 

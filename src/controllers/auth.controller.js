@@ -2,10 +2,14 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 
-const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET || 'super_secret_jwt_key_level_trap_2026_production_ready', {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d'
-  });
+// El token lleva la identidad firmada para que la sesión sobreviva a un
+// reinicio del datastore local (Render reinicia el disco en cada deploy).
+const generateToken = (user) => {
+  return jwt.sign(
+    { userId: user.id, username: user.username, email: user.email },
+    process.env.JWT_SECRET || 'super_secret_jwt_key_level_trap_2026_production_ready',
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+  );
 };
 
 const register = async (req, res) => {
@@ -82,7 +86,11 @@ const register = async (req, res) => {
       updated_at: new Date()
     });
 
-    const token = generateToken(newUser.id);
+    const token = generateToken({
+      id: newUser.id,
+      username: trimmedUsername,
+      email: trimmedEmail
+    });
 
     return res.status(201).json({
       success: true,
@@ -145,7 +153,11 @@ const login = async (req, res) => {
       });
     }
 
-    const token = generateToken(user.id);
+    const token = generateToken({
+      id: user.id,
+      username: user.username,
+      email: user.email
+    });
 
     return res.status(200).json({
       success: true,

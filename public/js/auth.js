@@ -1,6 +1,17 @@
 // LEVEL TRAP - Autenticación y Transición al Juego (CERO MOCKS)
 const API_BASE = '/api';
-let authToken = sessionStorage.getItem('level_trap_token') || null;
+const TOKEN_KEY = 'level_trap_token';
+
+// El JWT real emitido por el servidor se conserva entre pestañas y reinicios
+// del navegador. sessionStorage se borraba al cerrar la pestaña y provocaba
+// que la sesión creada en el registro "desapareciera".
+const legacyToken = sessionStorage.getItem(TOKEN_KEY);
+if (legacyToken) {
+  if (!localStorage.getItem(TOKEN_KEY)) localStorage.setItem(TOKEN_KEY, legacyToken);
+  sessionStorage.removeItem(TOKEN_KEY);
+}
+
+let authToken = localStorage.getItem(TOKEN_KEY) || null;
 let gameInstance = null;
 
 // Elementos del DOM
@@ -145,7 +156,8 @@ async function showGameView(user) {
 
 function logout() {
   authToken = null;
-  sessionStorage.removeItem('level_trap_token');
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
   if (gameInstance) {
     if (gameInstance.animationFrameId) {
       cancelAnimationFrame(gameInstance.animationFrameId);
@@ -197,7 +209,7 @@ formLogin.addEventListener('submit', async (e) => {
     }
 
     authToken = data.data.token;
-    sessionStorage.setItem('level_trap_token', authToken);
+    localStorage.setItem(TOKEN_KEY, authToken);
     showGameView(data.data.user);
   } catch (err) {
     showAlert(err.message, 'error');
@@ -226,7 +238,7 @@ formRegister.addEventListener('submit', async (e) => {
     }
 
     authToken = data.data.token;
-    sessionStorage.setItem('level_trap_token', authToken);
+    localStorage.setItem(TOKEN_KEY, authToken);
     showGameView(data.data.user);
   } catch (err) {
     showAlert(err.message, 'error');

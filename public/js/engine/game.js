@@ -141,7 +141,7 @@ class LevelTrapGame {
   // Cargar nivel desde el Servidor REST (Cero Mocks)
   async loadLevel(levelNumber) {
     try {
-      const token = sessionStorage.getItem('level_trap_token');
+      const token = localStorage.getItem('level_trap_token');
       const res = await fetch(`/api/game/levels/${levelNumber}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -204,7 +204,7 @@ class LevelTrapGame {
   // Cargar silueta fantasma de la mejor marca
   async loadBestGhost(levelNumber) {
     try {
-      const token = sessionStorage.getItem('level_trap_token');
+      const token = localStorage.getItem('level_trap_token');
       const res = await fetch(`/api/speedrun/ghost/${levelNumber}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -249,7 +249,7 @@ class LevelTrapGame {
 
     // Persistir muerte en la Base de Datos Real
     try {
-      const token = sessionStorage.getItem('level_trap_token');
+      const token = localStorage.getItem('level_trap_token');
       const res = await fetch('/api/game/death', {
         method: 'POST',
         headers: {
@@ -312,7 +312,7 @@ class LevelTrapGame {
 
     // Persistir récord de speedrun en BD
     try {
-      const token = sessionStorage.getItem('level_trap_token');
+      const token = localStorage.getItem('level_trap_token');
       await fetch('/api/speedrun/record', {
         method: 'POST',
         headers: {
@@ -358,7 +358,7 @@ class LevelTrapGame {
   // Desbloquear logro desde el cliente de forma segura y auditada
   async unlockAchievementClient(code) {
     try {
-      const token = sessionStorage.getItem('level_trap_token');
+      const token = localStorage.getItem('level_trap_token');
       const res = await fetch('/api/achievements/unlock', {
         method: 'POST',
         headers: {

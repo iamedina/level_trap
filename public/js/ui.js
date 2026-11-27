@@ -270,7 +270,7 @@ class UIManager {
   async showAchievementsModal() {
     this.openModal('LOGROS DE LEVEL TRAP', '<p class="loading-text">Consultando base de datos...</p>');
     try {
-      const token = sessionStorage.getItem('level_trap_token');
+      const token = localStorage.getItem('level_trap_token');
       const res = await fetch('/api/achievements', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -352,7 +352,7 @@ class UIManager {
   async showLevelsModal() {
     this.openModal('SELECCIÓN DE NIVEL (50 NIVELES)', '<p class="loading-text">Cargando progreso desde SQLite...</p>');
     try {
-      const token = sessionStorage.getItem('level_trap_token');
+      const token = localStorage.getItem('level_trap_token');
       const res = await fetch('/api/game/levels', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
