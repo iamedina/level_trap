@@ -30,6 +30,12 @@ body {
   user-select: none;
 }
 
+/* Pantalla de juego fija: las flechas/espacio no desplazan la página */
+body.game-active {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 .app-container {
   display: flex;
   flex-direction: column;

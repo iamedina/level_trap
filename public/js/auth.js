@@ -95,6 +95,7 @@ async function verifySession() {
 
 // Mostrar vista de autenticación
 function showAuthView() {
+  document.body.classList.remove('game-active');
   authSection.classList.remove('hidden');
   gameWrapper.classList.add('hidden');
   quickUsernameEl.textContent = 'Invitado';
@@ -109,6 +110,8 @@ function showAuthView() {
 // Activar vista de juego real
 async function showGameView(user) {
   window.currentUser = user;
+  document.body.classList.add('game-active');
+  window.scrollTo(0, 0);
   authSection.classList.add('hidden');
   gameWrapper.classList.remove('hidden');
 

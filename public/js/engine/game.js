@@ -57,9 +57,29 @@ class LevelTrapGame {
 
   // Inicialización de Controles por Teclado
   initInputs() {
+    // Teclas de juego: se bloquea la acción por defecto del navegador
+    // (desplazar la página con flechas/espacio) solo mientras se juega.
+    const GAME_KEYS = new Set([
+      'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+      'Space', 'KeyA', 'KeyD', 'KeyW', 'KeyS'
+    ]);
+
+    const debeBloquearScroll = (e) => {
+      const target = e.target;
+      if (target && (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(target.tagName) || target.isContentEditable)) {
+        return false;
+      }
+      const wrapper = document.getElementById('game-wrapper');
+      const overlay = document.getElementById('modal-overlay');
+      if (!wrapper || wrapper.classList.contains('hidden')) return false;
+      if (overlay && !overlay.classList.contains('hidden')) return false;
+      return GAME_KEYS.has(e.code);
+    };
+
     window.addEventListener('keydown', (e) => {
       // Ignorar si el usuario está escribiendo en campos de formulario
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+      if (debeBloquearScroll(e)) e.preventDefault();
 
       const code = e.code;
       if (code === 'KeyA' || code === 'ArrowLeft') this.inputs.left = true;
@@ -82,6 +102,8 @@ class LevelTrapGame {
     });
 
     window.addEventListener('keyup', (e) => {
+      if (debeBloquearScroll(e)) e.preventDefault();
+
       const code = e.code;
       if (code === 'KeyA' || code === 'ArrowLeft') this.inputs.left = false;
       if (code === 'KeyD' || code === 'ArrowRight') this.inputs.right = false;

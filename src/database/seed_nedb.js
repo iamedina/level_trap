@@ -25,6 +25,7 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
   const platforms = [];
   const traps = [];
   const fakeDoors = [];
+  const sidePlatforms = [];
 
   // Muros perimetrales indestructibles (Límites de pantalla: 1280 x 720)
   platforms.push({ x: 0, y: 0, w: 40, h: 720, type: 'wall' });
@@ -143,7 +144,7 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
       w: 24,
       h: 32,
       triggerRangeX: range,
-      fallSpeed: 8.5
+      fallSpeed: 8.5 + d * 3.5
     });
   const invert = (x, w = 140) =>
     traps.push({ type: 'gravity_inverter_zone', x, y: 80, w, h: 480 });
@@ -154,35 +155,41 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
     flat: (n) => Array(n).fill(0),
     arc: (n) =>
       Array.from({ length: n }, (_, i) =>
-        -Math.round(80 * Math.sin((Math.PI * i) / (n - 1)))
+        -Math.round((80 + 30 * d) * Math.sin((Math.PI * i) / (n - 1)))
       ),
     zig: (n) =>
-      Array.from({ length: n }, (_, i) => (i % 2 ? -70 : -20)),
+      Array.from({ length: n }, (_, i) =>
+        i % 2 ? -(70 + 20 * d) : -(20 + 10 * d)
+      ),
     climb: (n) =>
       Array.from({ length: n }, (_, i) =>
-        -Math.round((90 * i) / (n - 1))
+        -Math.round((100 * i) / (n - 1))
       ),
     dip: (n) =>
       Array.from({ length: n }, (_, i) =>
-        i === 0 || i === n - 1 ? 0 : 25
+        i === 0 || i === n - 1 ? 0 : 25 + Math.round(10 * d)
       )
   };
 
   function buildRoute(profile, n, spec) {
-    const w = Math.round(140 - d * 45);
-    const span = 820; // de x=230 a x=1050, justo antes del suelo derecho
-    const gap = (span - n * w) / (n - 1);
-    const offsets = profiles[profile](n);
+    // Más plataformas en los tramos avanzados; los índices de SPECS siguen
+    // siendo válidos porque la ruta solo crece, nunca se acorta.
+    const count = Math.min(8, n + (d > 0.35 ? 1 : 0) + (d > 0.7 ? 1 : 0));
+    const w = Math.round(130 - d * 40);
+    const startX = 215;
+    const span = 845; // hasta x=1060, solapando el suelo derecho de salida
+    const gap = (span - count * w) / (count - 1);
+    const offsets = profiles[profile](count);
     const route = [];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < count; i++) {
       let type = 'solid';
       let extra = {};
       if ((spec.fake || []).includes(i)) {
         type = 'fake_floor';
-        extra = { collapseDelayMs: Math.round(360 - d * 130) };
+        extra = { collapseDelayMs: Math.round(400 - d * 220) };
       }
       if ((spec.shrink || []).includes(i)) type = 'shrinking';
-      const x = 230 + i * (w + gap);
+      const x = startX + i * (w + gap);
       const y = 620 + offsets[i];
       plat(x, y, w, type, extra);
       route.push({ x, y, w });
@@ -201,7 +208,7 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
 
   // Plano de los 47 niveles normales. Los jefes (15, 35, 50) no figuran aquí.
   const SPECS = {
-    1:  { t: 'Pits 1: Watch Your Step',    p: 'flat',  n: 5, fake: [1, 3], below: [1] },
+    1:  { t: 'Pits 1: Watch Your Step',    p: 'flat',  n: 5, fake: [1, 3], below: [1, 3], fall: [2] },
     2:  { t: 'Pits 2: The Sudden Gap',     p: 'arc',   n: 5, fake: [2], below: [3] },
     3:  { t: 'Pits 3: Domino Drop',        p: 'flat',  n: 6, fake: [1, 2, 3, 4], below: [2] },
     4:  { t: 'Pits 4: Leap of Faith',      p: 'dip',   n: 5, fake: [2], below: [1, 3] },
@@ -255,6 +262,75 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
   const spec = SPECS[lvl];
   const title = spec.t;
 
+  // Mínimo garantizado de trampas: 3 en el nivel 1, 9 en el nivel 49.
+  const minTraps = 3 + Math.round(d * 6);
+
+  const addProgressiveTraps = (anchors, isGravity) => {
+    const usedBelow = new Set(spec.below || []);
+    const usedFall = new Set(spec.fall || []);
+    const usedOn = new Set(spec.on || []);
+    const usedSide = new Set();
+
+    const addBelow = () => {
+      for (let i = 1; i < anchors.length - 1; i++) {
+        if (!usedBelow.has(i)) {
+          usedBelow.add(i);
+          spikeBelow(anchors[i].x + 30, 55 + Math.round(d * 15));
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const addFall = () => {
+      for (let i = 1; i < anchors.length; i++) {
+        if (!usedFall.has(i)) {
+          usedFall.add(i);
+          falling(anchors[i].x + anchors[i].w / 2 - 12, isGravity ? 40 : 45);
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const addOn = () => {
+      if (isGravity || lvl < 30) return false;
+      for (let i = 1; i < anchors.length - 1; i++) {
+        if (!usedOn.has(i)) {
+          usedOn.add(i);
+          spikeOnPlatform(anchors[i], 50 + Math.round(d * 20));
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const addSide = () => {
+      for (let i = 0; i < sidePlatforms.length; i++) {
+        if (!usedSide.has(i)) {
+          usedSide.add(i);
+          const p = sidePlatforms[i];
+          traps.push({
+            type: 'rising_spikes',
+            x: p.x + p.w / 2 - 15,
+            y: p.y - 26,
+            w: 30,
+            h: 26,
+            triggerDist: 55 + Math.round(d * 15)
+          });
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const actions = [addBelow, addFall, addOn, addSide];
+    let guard = 0;
+    while (traps.length < minTraps && guard++ < 30) {
+      if (!actions.some((fn) => fn())) break;
+    }
+  };
+
   if (spec.g) {
     // ---------------------------------------------------------------------
     // Inframundo: inversión gravitatoria y parkour en el techo
@@ -266,20 +342,31 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
     plat(230, 580, 130);
     invert(410, 140);
 
-    const ceil = [
-      { x: 450, y: 160, w: 140 },
-      { x: 640, y: 160, w: 140 },
-      { x: 830, y: 160, w: 140 }
-    ];
+    const ceilCount = 4 + (d > 0.5 ? 1 : 0);
+    const ceilW = 120;
+    const ceil = Array.from({ length: ceilCount }, (_, i) => ({
+      x: 400 + i * (ceilW + 40),
+      y: 160,
+      w: ceilW
+    }));
     ceil.forEach((c, i) => {
       if ((spec.ceilFake || []).includes(i)) {
         plat(c.x, c.y, c.w, 'fake_floor', {
-          collapseDelayMs: Math.round(340 - d * 100)
+          collapseDelayMs: Math.round(360 - d * 120)
         });
       } else {
         plat(c.x, c.y, c.w);
       }
     });
+
+    // Más recorrido vertical sin mover el inversor ni la salida
+    const midCount = 1 + (d > 0.5 ? 1 : 0);
+    for (let k = 0; k < midCount; k++) {
+      const x = 520 + k * 220;
+      const y = 420 - k * 30;
+      plat(x, y, 120);
+      sidePlatforms.push({ x, y, w: 120 });
+    }
 
     (spec.fall || []).forEach((i) => falling(ceil[i].x + ceil[i].w / 2 - 12, 40));
 
@@ -291,6 +378,8 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
     if (spec.exitSky) {
       exitDoor = { x: ceil[2].x + 45, y: 100, w: 40, h: 60 };
     }
+
+    addProgressiveTraps(ceil, true);
   } else {
     // ---------------------------------------------------------------------
     // Tierra / Volcánica: ruta de plataformas sobre un foso de pinchos
@@ -301,8 +390,21 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
 
     const route = buildRoute(spec.p, spec.n, spec);
 
-    (spec.on || []).forEach((i) => spikeOnPlatform(route[i], 50 + Math.round(d * 10)));
-    (spec.below || []).forEach((i) => spikeBelow(route[i].x + 30, 55));
+    // Plataformas secundarias: plano más grande sin alterar la ruta original
+    const sideCount = 2 + Math.round(d * 2);
+    for (let k = 0; k < sideCount; k++) {
+      const idx = 1 + ((k * 2 + lvl) % Math.max(1, route.length - 2));
+      const base = route[idx];
+      const x = Math.round(base.x + base.w / 2 - 55);
+      const y = Math.max(260, Math.round(base.y - (90 + (k % 2) * 25)));
+      plat(x, y, 110, k % 3 === 2 ? 'fake_floor' : 'solid', {
+        collapseDelayMs: Math.round(400 - d * 220)
+      });
+      sidePlatforms.push({ x, y, w: 110 });
+    }
+
+    (spec.on || []).forEach((i) => spikeOnPlatform(route[i], 50 + Math.round(d * 20)));
+    (spec.below || []).forEach((i) => spikeBelow(route[i].x + 30, 55 + Math.round(d * 15)));
     (spec.fall || []).forEach((i) => falling(route[i].x + route[i].w / 2 - 12, 45));
     (spec.pillar || []).forEach((i) => pillarBetween(route, i));
 
@@ -315,6 +417,8 @@ function generateLevelDevilLayout(lvl, zoneId, isBoss) {
       const last = route[route.length - 1];
       exitDoor = { x: last.x + 25, y: last.y - 60, w: 40, h: 60 };
     }
+
+    addProgressiveTraps(route, false);
   }
 
   return {
