@@ -1,0 +1,22 @@
+name: Keep Level Trap awake (Render Free)
+
+on:
+  schedule:
+    # Cada 5 minutos. Render apaga el servicio tras 15 min sin tráfico.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping a Render para evitar el spin-down
+        run: |
+          echo "Ping $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          curl --fail --silent --show-error --location \
+            --max-time 120 \
+            --retry 2 --retry-delay 3 --retry-all-errors \
+            --write-out 'HTTP %{http_code} en %{time_total}s\n' \
+            --output /dev/null \
+            https://level-trap.onrender.com/api/health
