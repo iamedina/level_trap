@@ -1,22 +1,55 @@
 name: Keep Level Trap awake (Render Free)
 
 on:
-  schedule:
-    # Cada 5 minutos. Render apaga el servicio tras 15 min sin tráfico.
-    - cron: '*/5 * * * *'
   workflow_dispatch:
+
+# Necesario para que el job pueda lanzar la siguiente ejecución.
+permissions:
+  actions: write
+
+# Evita que se acumulen ejecuciones simultáneas.
+concurrency:
+  group: level-trap-keep-alive
+  cancel-in-progress: false
 
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # GitHub corta los jobs a las 6 h; nos renovamos antes (5 h).
+    timeout-minutes: 360
     steps:
-      - name: Ping a Render para evitar el spin-down
+      - name: Ping cada 5 min y renovar el job
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: iamedina/level_trap
+          WORKFLOW: keep-alive.yml
         run: |
-          echo "Ping $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          curl --fail --silent --show-error --location \
-            --max-time 120 \
-            --retry 2 --retry-delay 3 --retry-all-errors \
-            --write-out 'HTTP %{http_code} en %{time_total}s\n' \
-            --output /dev/null \
-            https://level-trap.onrender.com/api/health
+          set -u
+          renewed=0
+          echo "INICIO $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+          for i in $(seq 1 70); do
+            echo "--- ping $i $(date -u +'%H:%M:%SZ') ---"
+            curl --fail --silent --show-error --location \
+              --max-time 120 \
+              --retry 2 --retry-delay 3 --retry-all-errors \
+              --write-out 'HTTP %{http_code} en %{time_total}s\n' \
+              --output /dev/null \
+              https://level-trap.onrender.com/api/health \
+              || echo "Ping fallido; se reintenta en 5 min"
+
+            # A los 5 h lanzamos la siguiente ejecución. Si falla,
+            # lo intentamos de nuevo en los dos ciclos siguientes.
+            if [ "$renewed" -eq 0 ] && [ "$i" -ge 60 ]; then
+              if gh workflow run "$WORKFLOW" --repo "$REPO" >/dev/null 2>&1; then
+                renewed=1
+                echo "Siguiente ejecución lanzada"
+              else
+                echo "No se pudo renovar; reintentaré"
+              fi
+            fi
+
+            sleep 300
+          done
+
+          echo "FIN $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
